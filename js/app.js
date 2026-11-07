@@ -351,11 +351,43 @@ async function refreshAllDatabaseData() {
     renderUsuariosTable();
 }
 
+/**
+ * Obtiene la totalidad de los registros de una tabla o vista de Supabase superando
+ * el límite por defecto de 1000 filas por petición de PostgREST mediante paginación `.range()`.
+ * @param {(from: number, to: number) => Promise<{ data: Array<any>, error: any }>} pageQueryFn
+ * @param {number} [pageSize=1000]
+ * @returns {Promise<{ data: Array<any>, error: any }>}
+ */
+async function fetchAllSupabaseRows(pageQueryFn, pageSize = 1000) {
+    const allRows = [];
+    let offset = 0;
+
+    while (true) {
+        const { data, error } = await pageQueryFn(offset, offset + pageSize - 1);
+        if (error) {
+            return { data: allRows, error };
+        }
+        if (!data || data.length === 0) {
+            break;
+        }
+        allRows.push(...data);
+        if (data.length < pageSize) {
+            break;
+        }
+        offset += pageSize;
+    }
+
+    return { data: allRows, error: null };
+}
+
 async function loadBancosFromDb() {
-    const { data, error } = await supabase
-        .from('bancos')
-        .select('id, created_at, nombre, descripcion')
-        .order('id', { ascending: true });
+    const { data, error } = await fetchAllSupabaseRows((from, to) =>
+        supabase
+            .from('bancos')
+            .select('id, created_at, nombre, descripcion')
+            .order('id', { ascending: true })
+            .range(from, to)
+    );
 
     if (error || !data) {
         stateBancos = [];
@@ -370,10 +402,13 @@ async function loadBancosFromDb() {
 }
 
 async function loadCuentasFromDb() {
-    const { data, error } = await supabase
-        .from('cuentas')
-        .select('id, created_at, banco_id, cuenta, tipo')
-        .order('id', { ascending: true });
+    const { data, error } = await fetchAllSupabaseRows((from, to) =>
+        supabase
+            .from('cuentas')
+            .select('id, created_at, banco_id, cuenta, tipo')
+            .order('id', { ascending: true })
+            .range(from, to)
+    );
 
     if (error || !data) {
         stateCuentas = [];
@@ -388,11 +423,14 @@ async function loadCuentasFromDb() {
 }
 
 async function loadSaldosBancoFromDb() {
-    const { data, error } = await supabase
-        .from('saldos_banco')
-        .select('id, created_at, banco_id, fecha, monto, moneda')
-        .order('fecha', { ascending: false })
-        .order('id', { ascending: false });
+    const { data, error } = await fetchAllSupabaseRows((from, to) =>
+        supabase
+            .from('saldos_banco')
+            .select('id, created_at, banco_id, fecha, monto, moneda')
+            .order('fecha', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, to)
+    );
 
     if (error || !data) {
         stateSaldosBanco = [];
@@ -407,11 +445,14 @@ async function loadSaldosBancoFromDb() {
 }
 
 async function loadMovimientosFromDb() {
-    const { data, error } = await supabase
-        .from('movimientos')
-        .select('id, created_at, banco_id, cuenta_id, fecha, moneda, empresa, referencia, descripcion, tipo, debe, haber')
-        .order('fecha', { ascending: false })
-        .order('id', { ascending: false });
+    const { data, error } = await fetchAllSupabaseRows((from, to) =>
+        supabase
+            .from('movimientos')
+            .select('id, created_at, banco_id, cuenta_id, fecha, moneda, empresa, referencia, descripcion, tipo, debe, haber')
+            .order('fecha', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, to)
+    );
 
     if (error || !data) {
         stateMovimientos = [];
@@ -436,9 +477,13 @@ async function loadMovimientosFromDb() {
  * e indicadores desde `public.movimientos` (ignorando `saldos_banco`).
  */
 async function loadVistaResumenSaldosFromDb() {
-    const { data, error } = await supabase
-        .from('vista_resumen_saldos_movimientos')
-        .select('*');
+    const { data, error } = await fetchAllSupabaseRows((from, to) =>
+        supabase
+            .from('vista_resumen_saldos_movimientos')
+            .select('*')
+            .order('id', { ascending: true })
+            .range(from, to)
+    );
 
     if (error || !data) {
         stateVistaActivaEnDb = false;
@@ -1368,6 +1413,37 @@ function splitCsvLine(line, delimiter) {
 }
 
 /**
+ * Convierte un valor numérico de una celda CSV soportando formatos con o sin
+ * separadores de miles (`1.500,00`, `1,500.00`, `1500,50`, `1500.50`).
+ * @param {string|number} rawVal
+ * @returns {number}
+ */
+function parseCsvNumericAmount(rawVal) {
+    let str = String(rawVal ?? '0').trim().replace(/\s+/g, '');
+    if (!str) return 0;
+
+    const lastComma = str.lastIndexOf(',');
+    const lastDot = str.lastIndexOf('.');
+
+    if (lastComma > -1 && lastDot > -1) {
+        if (lastComma > lastDot) {
+            // Formato europeo/venezolano: 1.234.567,89
+            str = str.replace(/\./g, '').replace(',', '.');
+        } else {
+            // Formato anglosajón: 1,234,567.89
+            str = str.replace(/,/g, '');
+        }
+    } else if (lastComma > -1) {
+        // Solo comas: si hay múltiples comas (1,234,567) son miles; si hay una sola, es decimal
+        const commaCount = (str.match(/,/g) || []).length;
+        str = commaCount > 1 ? str.replace(/,/g, '') : str.replace(',', '.');
+    }
+
+    const parsed = parseFloat(str);
+    return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+/**
  * Procesa e importa el archivo CSV seleccionado hacia la tabla `public.movimientos`,
  * identificando:
  * 1. El banco por el nombre del banco (`bancos.nombre` -> `banco_id`).
@@ -1424,8 +1500,8 @@ async function importPlantillaCsvToMovimientos() {
             const referenciaCsv = (cols[5] || '').trim();
             const descripcionCsv = (cols[6] || '').trim();
             const tipoCsv = (cols[7] || (cuentaNroCsv ? 'Crédito' : 'Saldo Directo')).trim();
-            const debeVal = parseFloat(String(cols[8] || '0').replace(',', '.')) || 0;
-            const haberVal = parseFloat(String(cols[9] || '0').replace(',', '.')) || 0;
+            const debeVal = parseCsvNumericAmount(cols[8]);
+            const haberVal = parseCsvNumericAmount(cols[9]);
 
             if (!bancoNombreCsv) {
                 errors.push(`Fila ${lineNum}: El nombre del banco está vacío.`);
@@ -1544,16 +1620,29 @@ async function importPlantillaCsvToMovimientos() {
         }
 
         if (payloadsToInsert.length > 0) {
-            const { error: insertErr } = await supabase
-                .from('movimientos')
-                .insert(payloadsToInsert);
+            const BATCH_SIZE = 500;
+            const totalBatches = Math.ceil(payloadsToInsert.length / BATCH_SIZE);
 
-            if (insertErr) {
-                showMovModalAlert(
-                    `Error al insertar en <code>public.movimientos</code>: ${insertErr.message}`,
-                    'danger'
-                );
-                return;
+            for (let bIdx = 0; bIdx < totalBatches; bIdx++) {
+                const start = bIdx * BATCH_SIZE;
+                const end = Math.min(start + BATCH_SIZE, payloadsToInsert.length);
+                const chunk = payloadsToInsert.slice(start, end);
+
+                if (btnImport) {
+                    btnImport.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Cargando lote ${bIdx + 1}/${totalBatches} (${end}/${payloadsToInsert.length} filas)...`;
+                }
+
+                const { error: insertErr } = await supabase
+                    .from('movimientos')
+                    .insert(chunk);
+
+                if (insertErr) {
+                    showMovModalAlert(
+                        `Error al insertar el lote ${bIdx + 1}/${totalBatches} (filas ${start + 1} a ${end}) en <code>public.movimientos</code>: ${insertErr.message}`,
+                        'danger'
+                    );
+                    return;
+                }
             }
         }
 
