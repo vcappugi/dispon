@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Disponibilidad - Gestión de Bancos, Cuentas, Saldos y Movimientos</title>
+    <!-- Bootstrap 5.3 CSS -->
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+        crossorigin="anonymous"
+    />
+    <!-- Bootstrap Icons -->
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    />
+    <!-- Estilos Institucionales y Layout Full-Width -->
+    <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+    <!-- ======================================================================
+         1. PANTALLA DE LOGIN (VALIDACIÓN CONTRA TABLA `usuarios` EN SUPABASE)
+         ====================================================================== -->
+    <section id="loginSection" class="login-viewport">
+        <div class="container-fluid px-2 px-md-4">
+            <div class="row g-0 login-shell">
+                <div class="col-12 col-lg-5 login-banner-panel">
+                    <div>
+                        <div
+                            class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill mb-3"
+                            style="background-color: rgba(249, 115, 22, 0.25); border: 1px solid var(--accent-orange);"
+                        >
+                            <i class="bi bi-shield-lock-fill text-white fs-5"></i>
+                            <span class="small fw-bold text-white text-uppercase">Supabase + Clave Encriptada</span>
+                        </div>
+                        <h1 class="h3 fw-bold text-white mb-3">
+                            Sistema de Disponibilidad Bancaria y Estados de Cuenta
+                        </h1>
+                        <p class="text-white opacity-75 mb-4">
+                            Acceso autenticado mediante la tabla <code class="text-white">public.usuarios</code> con
+                            verificación criptográfica de credenciales y políticas de seguridad a nivel de filas (RLS).
+                        </p>
+                    </div>
+
+                    <div
+                        class="p-3 rounded-3"
+                        style="background-color: rgba(10, 25, 47, 0.65); border-left: 4px solid var(--accent-orange);"
+                    >
+                        <div class="small text-white fw-bold mb-1">
+                            <i class="bi bi-person-badge-fill me-1"></i> Credenciales de Prueba Configuradas:
+                        </div>
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 small text-white">
+                            <span>Usuario: <strong class="text-white">vcappugi</strong></span>
+                            <span>Clave: <strong class="text-white">10838729</strong></span>
+                            <button
+                                id="btnFillTestUser"
+                                type="button"
+                                class="btn btn-sm btn-institutional-white py-0 px-2"
+                            >
+                                Cargar datos
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-lg-7 login-form-panel d-flex flex-column justify-content-center">
+                    <div class="w-100">
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <h2 class="h4 fw-bold mb-0" style="color: var(--bg-green-deep);">
+                                <i class="bi bi-box-arrow-in-right me-2" style="color: var(--accent-orange);"></i>Iniciar Sesión
+                            </h2>
+                            <span id="loginSupabaseStatus" class="badge badge-status-active">
+                                <i class="bi bi-database-check me-1"></i> Tabla: usuarios
+                            </span>
+                        </div>
+
+                        <div id="loginAlert" class="alert d-none" role="alert"></div>
+
+                        <form id="loginForm" novalidate>
+                            <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                    <label for="inputUsuario" class="form-label fw-bold">
+                                        Usuario (<code>usuarios.nombre</code>)
+                                    </label>
+                                    <div class="input-group login-input-group">
+                                        <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
+                                        <input
+                                            type="text"
+                                            id="inputUsuario"
+                                            class="form-control"
+                                            placeholder="Ej. vcappugi"
+                                            value="vcappugi"
+                                            required
+                                            autocomplete="username"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div class="col-12 col-md-6">
+                                    <label for="inputClave" class="form-label fw-bold">
+                                        Clave (<code>usuarios.clave</code> encriptada)
+                                    </label>
+                                    <div class="input-group login-input-group">
+                                        <span class="input-group-text"><i class="bi bi-key-fill"></i></span>
+                                        <input
+                                            type="password"
+                                            id="inputClave"
+                                            class="form-control"
+                                            placeholder="Ingrese su clave"
+                                            value="10838729"
+                                            required
+                                            autocomplete="current-password"
+                                        />
+                                        <button
+                                            id="btnTogglePassword"
+                                            class="btn btn-outline-secondary"
+                                            type="button"
+                                            title="Mostrar / Ocultar clave"
+                                        >
+                                            <i class="bi bi-eye-fill"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="col-12 mt-4">
+                                    <button
+                                        id="btnSubmitLogin"
+                                        type="submit"
+                                        class="btn btn-institutional-accent w-100 py-2 fs-6"
+                                    >
+                                        <i class="bi bi-shield-check me-2"></i>Validar Credenciales e Ingresar
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ======================================================================
+         2. ENTORNO PRINCIPAL DE LA APLICACIÓN (OCULTO HASTA INICIAR SESIÓN)
+         ====================================================================== -->
+    <div id="appWorkspace" class="app-wrapper d-none">
+        <!-- Panel Lateral Izquierdo de Solo Iconos Desplegable con Hover (Directiva 6) -->
+        <aside id="appSidebar" class="icon-sidebar" aria-label="Panel de Navegación Izquierdo">
+            <a href="#dashboard" class="sidebar-brand" data-module="dashboard">
+                <span class="brand-icon"><i class="bi bi-bank2"></i></span>
+                <span class="brand-text">DISPONIBILIDAD</span>
+            </a>
+
+            <ul class="sidebar-nav">
+                <li class="sidebar-item">
+                    <a href="#dashboard" class="sidebar-link active" data-module="dashboard" title="Dashboard">
+                        <span class="nav-icon"><i class="bi bi-speedometer2"></i></span>
+                        <span class="nav-label">Dashboard</span>
+                    </a>
+                </li>
+
+                <li class="sidebar-item">
+                    <a
+                        href="#estados-cuenta"
+                        class="sidebar-link"
+                        data-module="estados-cuenta"
+                        title="Ingresos o Edición de Estados de Cuenta"
+                    >
+                        <span class="nav-icon"><i class="bi bi-journal-plus"></i></span>
+                        <span class="nav-label">Ingresos / Edición Estados de Cuenta</span>
+                    </a>
+                </li>
+
+                <li class="sidebar-item">
+                    <a
+                        href="#exportacion"
+                        class="sidebar-link"
+                        data-module="exportacion"
+                        title="Exportación de Movimientos"
+                    >
+                        <span class="nav-icon"><i class="bi bi-file-earmark-arrow-down-fill"></i></span>
+                        <span class="nav-label">Exportación de Movimientos</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <a href="#logout" id="btnSidebarLogout" class="sidebar-link text-white" title="Cerrar Sesión">
+                    <span class="nav-icon"><i class="bi bi-box-arrow-left text-white"></i></span>
+                    <span class="nav-label">Cerrar Sesión</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Área Principal de Contenido (100% Ancho de Pantalla - Directiva 5) -->
+        <div class="main-workspace">
+            <header class="workspace-topbar">
+                <div class="d-flex align-items-center gap-2">
+                    <button
+                        id="btnMobileSidebar"
+                        class="btn btn-sm btn-institutional-accent d-md-none"
+                        type="button"
+                        aria-label="Desplegar panel lateral"
+                    >
+                        <i class="bi bi-list fs-5"></i>
+                    </button>
+                    <h1 id="viewTitle" class="h5 mb-0 fw-bold text-white">Dashboard</h1>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span class="badge badge-status-active px-3 py-2">
+                        <i class="bi bi-person-check-fill me-1"></i>
+                        Usuario: <strong id="activeUserName">vcappugi</strong>
+                        (<span id="activeUserRole">admin</span>)
+                    </span>
+                    <button id="btnTopbarLogout" type="button" class="btn btn-sm btn-institutional-accent">
+                        <i class="bi bi-power me-1"></i> Salir
+                    </button>
+                </div>
+            </header>
+
+            <main class="container-fluid py-3 px-2 px-md-3 flex-grow-1">
+                <!-- Alerta global de operaciones CRUD -->
+                <div id="globalFeedbackAlert" class="alert d-none py-2 small mb-3" role="alert"></div>
+
+                <!-- ==========================================================
+                     MÓDULO 1: DASHBOARD (INDICADORES DESDE LA VISTA `public.vista_resumen_saldos_movimientos`)
+                     ========================================================== -->
+                <section id="module-dashboard" class="app-module">
+                    <!-- Barra Superior de Filtros Dinámicos de Indicadores -->
+                    <div class="card card-institutional mb-3">
+                        <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <span>
+                                <i class="bi bi-graph-up-arrow me-2 text-white"></i>
+                                Tablero de Indicadores desde Vista en Supabase (<code class="text-white">public.vista_resumen_saldos_movimientos</code>)
+                            </span>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button
+                                    class="btn btn-sm btn-institutional-white"
+                                    type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#collapseSqlVistaResumen"
+                                    aria-expanded="false"
+                                    aria-controls="collapseSqlVistaResumen"
+                                >
+                                    <i class="bi bi-filetype-sql me-1"></i> Ver SQL de la Vista
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-institutional-white"
+                                    data-go-module="estados-cuenta"
+                                >
+                                    <i class="bi bi-journal-plus me-1"></i> Ir a Ingreso / Edición
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-institutional-accent"
+                                    data-go-module="exportacion"
+                                >
+                                    <i class="bi bi-file-earmark-arrow-down me-1"></i> Exportar Movimientos
+                                </button>
+                            </div>
+                        </div>
+                        <div class="collapse border-bottom" id="collapseSqlVistaResumen">
+                            <div class="p-3 bg-dark text-white small">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                                    <span>
+                                        <i class="bi bi-database-fill-gear me-1 text-warning"></i>
+                                        Definición SQL de la vista <code>public.vista_resumen_saldos_movimientos</code> (guardada en <code>sql/02_vista_resumen_saldos_movimientos.sql</code>):
+                                    </span>
+                                    <button id="btnCopySqlVista" type="button" class="btn btn-sm btn-institutional-accent py-0 px-2">
+                                        <i class="bi bi-clipboard me-1"></i> Copiar SQL
+                                    </button>
+                                </div>
+                                <pre id="sqlVistaCodeBlock" class="mb-0 p-2 rounded bg-black text-white small" style="overflow-x: auto;">CREATE OR REPLACE VIEW public.vista_resumen_saldos_movimientos
+WITH (security_invoker = true)
+AS
+SELECT
+    ROW_NUMBER() OVER (ORDER BY m.fecha DESC, m.banco_id ASC, m.moneda ASC) AS id,
+    m.banco_id,
+    b.nombre AS banco_nombre,
+    b.descripcion AS banco_descripcion,
+    m.fecha,
+    COALESCE(m.moneda, 'VES') AS moneda,
+    COUNT(m.id)::BIGINT AS total_movimientos,
+    COUNT(m.id) FILTER (WHERE m.cuenta_id IS NOT NULL)::BIGINT AS movimientos_con_cuenta,
+    COUNT(m.id) FILTER (WHERE m.cuenta_id IS NULL)::BIGINT AS movimientos_directo_banco,
+    COUNT(DISTINCT m.cuenta_id)::BIGINT AS total_cuentas_movidas,
+    COALESCE(SUM(m.debe), 0)::NUMERIC(18, 2) AS total_debe,
+    COALESCE(SUM(m.haber), 0)::NUMERIC(18, 2) AS total_haber,
+    COALESCE(SUM(COALESCE(m.debe, 0) - COALESCE(m.haber, 0)), 0)::NUMERIC(18, 2) AS saldo_disponible,
+    MIN(m.fecha) AS primera_fecha,
+    MAX(m.fecha) AS ultima_fecha
+FROM public.movimientos m
+LEFT JOIN public.bancos b ON b.id = m.banco_id
+GROUP BY m.fecha, m.banco_id, b.nombre, b.descripcion, m.moneda;
+
+GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;</pre>
+                            </div>
+                        </div>
+                        <div class="card-body py-2 px-2 px-md-3">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-12 col-sm-6 col-lg-3">
+                                    <label for="dashFilterBanco" class="form-label small fw-bold mb-1">Banco</label>
+                                    <select id="dashFilterBanco" class="form-select form-select-sm">
+                                        <option value="">Todos los bancos</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-sm-6 col-lg-2">
+                                    <label for="dashFilterMoneda" class="form-label small fw-bold mb-1">Moneda</label>
+                                    <select id="dashFilterMoneda" class="form-select form-select-sm">
+                                        <option value="">Todas (VES / USD / EUR / USDT / BNB / BTC / YEN)</option>
+                                        <option value="VES">VES</option>
+                                        <option value="USD">USD</option>
+                                        <option value="EUR">EUR</option>
+                                        <option value="USDT">USDT</option>
+                                        <option value="BNB">BNB</option>
+                                        <option value="BTC">BTC</option>
+                                        <option value="YEN">YEN</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-sm-4 col-lg-2">
+                                    <label for="dashFilterDesde" class="form-label small fw-bold mb-1">Fecha Desde</label>
+                                    <input type="date" id="dashFilterDesde" class="form-control form-control-sm" />
+                                </div>
+                                <div class="col-6 col-sm-4 col-lg-2">
+                                    <label for="dashFilterHasta" class="form-label small fw-bold mb-1">Fecha Hasta</label>
+                                    <input type="date" id="dashFilterHasta" class="form-control form-control-sm" />
+                                </div>
+                                <div class="col-6 col-sm-4 col-lg-3 d-flex gap-2">
+                                    <button
+                                        id="btnClearDashFilters"
+                                        type="button"
+                                        class="btn btn-sm btn-outline-secondary w-100"
+                                    >
+                                        <i class="bi bi-eraser me-1"></i> Limpiar Filtros
+                                    </button>
+                                    <button
+                                        id="btnRefreshDashIndicators"
+                                        type="button"
+                                        class="btn btn-sm btn-institutional-primary w-100"
+                                    >
+                                        <i class="bi bi-arrow-repeat me-1"></i> Actualizar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FILA 1: INDICADORES DE SALDOS BANCARIOS RESUMIDOS POR MONEDA DESDE `vista_resumen_saldos_movimientos` -->
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                        <span class="small fw-bold text-uppercase" style="color: var(--bg-green-deep);">
+                            <i class="bi bi-wallet2 me-1" style="color: var(--accent-orange);"></i>
+                            Saldos Bancarios Resumidos por Moneda (<code>public.vista_resumen_saldos_movimientos</code> — VES, USD, EUR, USDT, BNB, BTC, YEN)
+                        </span>
+                        <div class="d-flex flex-wrap gap-2">
+                            <span id="dashViewSourceBadge" class="badge badge-status-active">
+                                Origen: public.vista_resumen_saldos_movimientos
+                            </span>
+                            <span id="dashSaldosCorteBadge" class="badge badge-status-active">Corte: --</span>
+                        </div>
+                    </div>
+                    <div id="dashCurrencyCardsContainer" class="row g-2 mb-3">
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <div class="card card-institutional h-100">
+                                <div class="card-body py-2 px-3 d-flex align-items-center justify-content-between">
+                                    <div>
+                                        <p class="text-uppercase small fw-bold text-secondary mb-1">Saldo Disponible VES</p>
+                                        <h2 id="dashTotalVes" class="h6 fw-bold mb-1">0,00 VES</h2>
+                                        <div id="dashSubVes" class="small text-secondary">Debe: 0,00 | Haber: 0,00</div>
+                                    </div>
+                                    <span class="fs-4 icon-box-institutional rounded-3 px-2 py-1">
+                                        <i class="bi bi-cash-stack"></i>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FILA 2: INDICADORES DE FLUJO ACUMULADO SEPARADOS POR MONEDA DESDE `vista_resumen_saldos_movimientos` -->
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="small fw-bold text-uppercase" style="color: var(--bg-blue-deep);">
+                            <i class="bi bi-arrow-left-right me-1" style="color: var(--accent-orange);"></i>
+                            Totales de Debe, Haber y Saldo Neto Total por Moneda (<code>public.vista_resumen_saldos_movimientos</code>)
+                        </span>
+                        <span id="dashMovsCorteBadge" class="badge badge-status-alert">Último mov: --</span>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-sm-6 col-xl-3">
+                            <div class="card card-institutional h-100">
+                                <div class="card-body d-flex flex-column justify-content-between">
+                                    <div class="d-flex align-items-start justify-content-between mb-2">
+                                        <div>
+                                            <p class="text-uppercase small fw-bold text-secondary mb-1">
+                                                Total Debe por Moneda
+                                            </p>
+                                            <div id="dashSubMovDebe" class="small text-secondary">Ingresos / Cargos separados por moneda</div>
+                                        </div>
+                                        <span class="fs-4 icon-box-institutional rounded-3 px-2 py-1">
+                                            <i class="bi bi-arrow-down-left-circle-fill"></i>
+                                        </span>
+                                    </div>
+                                    <div id="dashMovTotalDebe" class="small fw-bold" style="color: var(--bg-green-deep);">
+                                        0,00
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-sm-6 col-xl-3">
+                            <div class="card card-institutional h-100">
+                                <div class="card-body d-flex flex-column justify-content-between">
+                                    <div class="d-flex align-items-start justify-content-between mb-2">
+                                        <div>
+                                            <p class="text-uppercase small fw-bold text-secondary mb-1">
+                                                Total Haber por Moneda
+                                            </p>
+                                            <div id="dashSubMovHaber" class="small text-secondary">Egresos / Abonos separados por moneda</div>
+                                        </div>
+                                        <span class="fs-4 icon-box-institutional rounded-3 px-2 py-1">
+                                            <i class="bi bi-arrow-up-right-circle-fill"></i>
+                                        </span>
+                                    </div>
+                                    <div id="dashMovTotalHaber" class="small fw-bold" style="color: var(--accent-orange-dark);">
+                                        0,00
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-sm-6 col-xl-3">
+                            <div class="card card-institutional h-100">
+                                <div class="card-body d-flex flex-column justify-content-between">
+                                    <div class="d-flex align-items-start justify-content-between mb-2">
+                                        <div>
+                                            <p class="text-uppercase small fw-bold text-secondary mb-1">
+                                                Saldo Neto Total (Debe - Haber)
+                                            </p>
+                                            <div id="dashSubMovNeto" class="small text-secondary">Saldo neto por moneda (sin mezclar divisas)</div>
+                                        </div>
+                                        <span class="fs-4 icon-box-institutional rounded-3 px-2 py-1">
+                                            <i class="bi bi-activity"></i>
+                                        </span>
+                                    </div>
+                                    <div id="dashMovFlujoNeto" class="small fw-bold">0,00</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-sm-6 col-xl-3">
+                            <div class="card card-institutional h-100">
+                                <div class="card-body d-flex flex-column justify-content-between">
+                                    <div class="d-flex align-items-start justify-content-between mb-2">
+                                        <div>
+                                            <p class="text-uppercase small fw-bold text-secondary mb-1">
+                                                Mayor Disponibilidad y Volumen
+                                            </p>
+                                            <h2 class="h6 fw-bold mb-1">
+                                                <span id="dashCountMovs">0</span> Movimientos
+                                            </h2>
+                                            <div id="dashSubMovEstructura" class="small text-secondary">
+                                                0 en cuenta / 0 directos a banco (<span id="dashCountCuentas">0</span> ctas)
+                                            </div>
+                                        </div>
+                                        <span class="fs-4 icon-box-institutional rounded-3 px-2 py-1">
+                                            <i class="bi bi-bar-chart-line-fill"></i>
+                                        </span>
+                                    </div>
+                                    <div class="border-top pt-2 mt-1">
+                                        <div id="dashTopBancoSaldo" class="small fw-semibold">Sin registros</div>
+                                        <div id="dashSubSaldosMeta" class="small text-secondary mt-1">
+                                            <span id="dashCountSaldos">0</span> resúmenes en <span id="dashCountBancos">0</span> bancos
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FILA 3: DISTRIBUCIÓN COMPARATIVA POR BANCO DESDE `vista_resumen_saldos_movimientos` -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-lg-6">
+                            <div class="card card-institutional h-100">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <span>
+                                        <i class="bi bi-pie-chart-fill me-2 text-white"></i>
+                                        Saldos por Banco (<code class="text-white">vista_resumen_saldos_movimientos</code>)
+                                    </span>
+                                    <span class="badge badge-status-active">Saldo Disponible (Debe - Haber)</span>
+                                </div>
+                                <div id="dashKpiBarsSaldos" class="card-body p-3">
+                                    <div class="text-muted small text-center py-2">Cargando indicadores de la vista...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-lg-6">
+                            <div class="card card-institutional h-100">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <span>
+                                        <i class="bi bi-sliders2-vertical me-2 text-white"></i>
+                                        Relación Debe vs Haber (<code class="text-white">vista_resumen_saldos_movimientos</code>)
+                                    </span>
+                                    <span class="badge badge-status-alert">Flujo por Banco</span>
+                                </div>
+                                <div id="dashKpiBarsMovimientos" class="card-body p-3">
+                                    <div class="text-muted small text-center py-2">Cargando indicadores de la vista...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FILA 4: TABLA DE RESUMEN DE SALDOS BANCARIOS (`public.vista_resumen_saldos_movimientos`) -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-12">
+                            <div class="card card-institutional">
+                                <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                    <span>
+                                        <i class="bi bi-wallet2 me-2 text-white"></i>
+                                        Resumen de Saldos Bancarios (<code class="text-white">public.vista_resumen_saldos_movimientos</code>)
+                                    </span>
+                                    <span class="badge badge-status-active">Calculado desde Movimientos</span>
+                                </div>
+                                <div class="card-body p-2 p-md-3">
+                                    <div class="row g-2 align-items-center mb-2">
+                                        <div class="col-12 col-md-6">
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                                <input
+                                                    type="text"
+                                                    id="filterDashSaldos"
+                                                    class="form-control"
+                                                    placeholder="Filtrar vista por código, nombre de banco, cuenta o moneda..."
+                                                />
+                                            </div>
+                                        </div>
+                                        <div class="col-12 col-md-6 d-flex justify-content-md-end align-items-center gap-2">
+                                            <label class="small fw-semibold mb-0">Filas por página:</label>
+                                            <select id="pageSizeDashSaldos" class="form-select form-select-sm" style="width: 80px;">
+                                                <option value="5">5</option>
+                                                <option value="10" selected>10</option>
+                                                <option value="20">20</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="table-viewport-container">
+                                        <table class="table table-adaptive align-middle">
+                                            <thead id="theadDashSaldos">
+                                                <tr>
+                                                    <th style="width: 7%;" class="sortable-th" data-sort="id">
+                                                        Código <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 18%;" class="sortable-th" data-sort="banco_nombre">
+                                                        Banco <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 19%;" class="sortable-th" data-sort="cuentas_asociadas">
+                                                        Cuentas / Estructura <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 10%;" class="sortable-th" data-sort="fecha">
+                                                        Fecha <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 8%;" class="sortable-th" data-sort="moneda_legible">
+                                                        Moneda <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 8%;" class="sortable-th" data-sort="total_movimientos">
+                                                        Movs <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 10%;" class="sortable-th" data-sort="total_debe">
+                                                        Total Debe <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 10%;" class="sortable-th" data-sort="total_haber">
+                                                        Total Haber <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 10%;" class="sortable-th" data-sort="saldo_disponible">
+                                                        Saldo Disponible <span class="sort-indicator"></span>
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="dashSaldosSummaryBody"></tbody>
+                                        </table>
+                                    </div>
+                                    <div
+                                        id="paginationDashSaldos"
+                                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2"
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FILA 5: TABLA DE INDICADORES Y FLUJO DE MOVIMIENTOS (`public.movimientos`) -->
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="card card-institutional">
+                                <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                    <span>
+                                        <i class="bi bi-arrow-left-right me-2 text-white"></i>
+                                        Movimientos Bancarios y Flujo Neto (<code class="text-white">public.movimientos</code>)
+                                    </span>
+                                    <span id="dashUserCard" class="badge badge-status-active">vcappugi</span>
+                                </div>
+                                <div class="card-body p-2 p-md-3">
+                                    <div class="row g-2 align-items-center mb-2">
+                                        <div class="col-12 col-md-6">
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                                <input
+                                                    type="text"
+                                                    id="filterDashMovimientos"
+                                                    class="form-control"
+                                                    placeholder="Filtrar movimientos por código, banco, cuenta, referencia, empresa o tipo..."
+                                                />
+                                            </div>
+                                        </div>
+                                        <div class="col-12 col-md-6 d-flex justify-content-md-end align-items-center gap-2">
+                                            <label class="small fw-semibold mb-0">Filas por página:</label>
+                                            <select id="pageSizeDashMovimientos" class="form-select form-select-sm" style="width: 80px;">
+                                                <option value="5">5</option>
+                                                <option value="10" selected>10</option>
+                                                <option value="20">20</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="table-viewport-container">
+                                        <table class="table table-adaptive align-middle">
+                                            <thead id="theadDashMovimientos">
+                                                <tr>
+                                                    <th style="width: 7%;" class="sortable-th" data-sort="id">
+                                                        Código <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 15%;" class="sortable-th" data-sort="banco_nombre">
+                                                        Banco <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 13%;" class="sortable-th" data-sort="cuenta_numero">
+                                                        Cuenta <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 9%;" class="sortable-th" data-sort="fecha">
+                                                        Fecha <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 7%;" class="sortable-th" data-sort="moneda_legible">
+                                                        Mon. <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 12%;" class="sortable-th" data-sort="referencia_legible">
+                                                        Referencia <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 9%;" class="sortable-th" data-sort="tipo_legible">
+                                                        Tipo <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 9%;" class="sortable-th" data-sort="debe">
+                                                        Debe <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 9%;" class="sortable-th" data-sort="haber">
+                                                        Haber <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 10%;" class="sortable-th" data-sort="flujo_neto">
+                                                        Neto <span class="sort-indicator"></span>
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="dashMovimientosSummaryBody"></tbody>
+                                        </table>
+                                    </div>
+                                    <div
+                                        id="paginationDashMovimientos"
+                                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2"
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==========================================================
+                     MÓDULO 2: INGRESOS O EDICIÓN DE ESTADOS DE CUENTA
+                     - Parte superior: ÚNICAMENTE los botones de opción para activar cada Modal
+                     - Parte inferior: Tabla paginada, ordenable y filtrable de `public.vista_resumen_saldos_movimientos`
+                     ========================================================== -->
+                <section id="module-estados-cuenta" class="app-module d-none">
+                    <!-- PARTE SUPERIOR: BARRA DE BOTONES PARA ACTIVAR LOS MODALES -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-12">
+                            <div class="card card-institutional">
+                                <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                    <span>
+                                        <i class="bi bi-sliders me-2 text-white"></i>
+                                        Opciones de Gestión
+                                    </span>
+                                    <button
+                                        id="btnRefreshAllCruds"
+                                        type="button"
+                                        class="btn btn-sm btn-institutional-white"
+                                    >
+                                        <i class="bi bi-arrow-clockwise me-1"></i> Recargar Datos
+                                    </button>
+                                </div>
+                                <div class="card-body p-3">
+                                    <div class="row g-3">
+                                        <div class="col-12 col-md-4">
+                                            <button
+                                                type="button"
+                                                class="btn btn-institutional-primary w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#modalCrudBancos"
+                                            >
+                                                <i class="bi bi-bank fs-5"></i>
+                                                <span>Bancos</span>
+                                            </button>
+                                        </div>
+
+                                        <div class="col-12 col-md-4">
+                                            <button
+                                                type="button"
+                                                class="btn btn-institutional-blue w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#modalCrudCuentas"
+                                            >
+                                                <i class="bi bi-credit-card-2-front fs-5"></i>
+                                                <span>Cuentas</span>
+                                            </button>
+                                        </div>
+
+                                        <div class="col-12 col-md-4">
+                                            <button
+                                                type="button"
+                                                id="btnOpenModalMovimientoTop"
+                                                class="btn btn-institutional-accent w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#modalCrudMovimientos"
+                                            >
+                                                <i class="bi bi-arrow-left-right fs-5"></i>
+                                                <span>Movimientos</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PARTE INFERIOR: RESUMEN DE SALDOS DE BANCOS TOTALIZADOS POR BANCO Y MONEDA DESDE `public.vista_resumen_saldos_movimientos` -->
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="card card-institutional">
+                                <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                    <span>
+                                        <i class="bi bi-table me-2 text-white"></i>
+                                        Saldos de Bancos Totalizados por Banco y Moneda (<code class="text-white">public.vista_resumen_saldos_movimientos</code>)
+                                    </span>
+                                    <span id="badgeMainSaldosCorte" class="badge badge-status-active">
+                                        Totalizado por Banco y Moneda (Acumulado General)
+                                    </span>
+                                </div>
+                                <div class="card-body p-2 p-md-3">
+                                    <!-- Barra de Filtros y Tamaño de Página -->
+                                    <div class="row g-2 align-items-center mb-3">
+                                        <div class="col-12 col-md-4">
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                                <input
+                                                    type="text"
+                                                    id="filterMainSaldosText"
+                                                    class="form-control"
+                                                    placeholder="Filtrar por código, banco, moneda o saldo..."
+                                                />
+                                            </div>
+                                        </div>
+                                        <div class="col-12 col-sm-4 col-md-3">
+                                            <select id="filterSaldosBancoId" class="form-select form-select-sm">
+                                                <option value="">Todos los bancos...</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-12 col-sm-4 col-md-3">
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text fw-semibold">Hasta fecha:</span>
+                                                <input
+                                                    type="date"
+                                                    id="filterMainSaldosFecha"
+                                                    class="form-control form-control-sm"
+                                                    title="Consultar saldo acumulado hasta esta fecha"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div class="col-12 col-sm-4 col-md-2 d-flex justify-content-md-end align-items-center gap-2">
+                                            <label class="small fw-semibold mb-0">Mostrar:</label>
+                                            <select id="pageSizeMainSaldos" class="form-select form-select-sm" style="width: 80px;">
+                                                <option value="5">5</option>
+                                                <option value="10" selected>10</option>
+                                                <option value="20">20</option>
+                                                <option value="50">50</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="table-viewport-container">
+                                        <table class="table table-adaptive align-middle">
+                                            <thead id="theadMainSaldos">
+                                                <tr>
+                                                    <th style="width: 10%;" class="sortable-th" data-sort="id">
+                                                        Código <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 28%;" class="sortable-th" data-sort="banco_nombre">
+                                                        Banco <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 12%;" class="sortable-th" data-sort="moneda_legible">
+                                                        Moneda <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 10%;" class="sortable-th" data-sort="total_movimientos">
+                                                        Movs <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 13%;" class="sortable-th" data-sort="total_debe">
+                                                        Total Debe <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 13%;" class="sortable-th" data-sort="total_haber">
+                                                        Total Haber <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 14%;" class="sortable-th" data-sort="saldo_disponible">
+                                                        Saldo Disponible <span class="sort-indicator"></span>
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="saldosBancoTableBody"></tbody>
+                                        </table>
+                                    </div>
+
+                                    <div
+                                        id="paginationMainSaldos"
+                                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3"
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ==========================================================
+                     MÓDULO 3: EXPORTACIÓN DE MOVIMIENTOS (`movimientos` y `vista_resumen_saldos_movimientos`)
+                     ========================================================== -->
+                <section id="module-exportacion" class="app-module d-none">
+                    <!-- Barra superior con botón para abrir Modal de `movimientos` y filtros -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-12">
+                            <div class="card card-institutional">
+                                <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                    <span>
+                                        <i class="bi bi-funnel-fill me-2 text-white"></i>
+                                        Gestión y Exportación de Movimientos (<code class="text-white">public.movimientos</code> y <code class="text-white">public.vista_resumen_saldos_movimientos</code>)
+                                    </span>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            id="btnOpenModalMovimiento"
+                                            class="btn btn-sm btn-institutional-white"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#modalCrudMovimientos"
+                                        >
+                                            <i class="bi bi-plus-circle me-1"></i> Movimientos
+                                        </button>
+                                        <button id="btnExportMovsCsv" type="button" class="btn btn-sm btn-institutional-primary">
+                                            <i class="bi bi-download me-1"></i> Exportar Movimientos (CSV)
+                                        </button>
+                                        <button id="btnExportCsv" type="button" class="btn btn-sm btn-institutional-accent">
+                                            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Exportar Saldos Banco (CSV)
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="card-body p-2 p-md-3">
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-12 col-sm-6 col-md-3">
+                                            <label for="expFilterSearch" class="form-label small fw-bold mb-1">
+                                                Buscar por Código, Nombre, Cuenta o Referencia
+                                            </label>
+                                            <input
+                                                type="text"
+                                                id="expFilterSearch"
+                                                class="form-control form-control-sm"
+                                                placeholder="Código, banco, empresa, referencia..."
+                                            />
+                                        </div>
+                                        <div class="col-12 col-sm-6 col-md-2">
+                                            <label for="expFilterBanco" class="form-label small fw-bold mb-1">Banco</label>
+                                            <select id="expFilterBanco" class="form-select form-select-sm">
+                                                <option value="">Todos los bancos</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-12 col-sm-6 col-md-2">
+                                            <label for="expFilterMoneda" class="form-label small fw-bold mb-1">Moneda</label>
+                                            <select id="expFilterMoneda" class="form-select form-select-sm">
+                                                <option value="">Todas</option>
+                                                <option value="VES">VES</option>
+                                                <option value="USD">USD</option>
+                                                <option value="EUR">EUR</option>
+                                                <option value="USDT">USDT</option>
+                                                <option value="BNB">BNB</option>
+                                                <option value="BTC">BTC</option>
+                                                <option value="YEN">YEN</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-12 col-sm-6 col-md-2">
+                                            <label for="expFilterDesde" class="form-label small fw-bold mb-1">Fecha Desde</label>
+                                            <input type="date" id="expFilterDesde" class="form-control form-control-sm" />
+                                        </div>
+                                        <div class="col-12 col-sm-6 col-md-2">
+                                            <label for="expFilterHasta" class="form-label small fw-bold mb-1">Fecha Hasta</label>
+                                            <input type="date" id="expFilterHasta" class="form-control form-control-sm" />
+                                        </div>
+                                        <div class="col-12 col-sm-6 col-md-1">
+                                            <button id="btnClearExpFilters" type="button" class="btn btn-sm btn-outline-secondary w-100">
+                                                Limpiar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de Movimientos Detallados (`public.movimientos`) -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-12">
+                            <div class="card card-institutional">
+                                <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                    <span>
+                                        <i class="bi bi-list-columns-reverse me-2 text-white"></i>
+                                        Registros de Movimientos (<code class="text-white">public.movimientos</code>)
+                                    </span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <label class="small text-white mb-0">Filas:</label>
+                                        <select id="pageSizeMovimientos" class="form-select form-select-sm" style="width: 80px;">
+                                            <option value="5">5</option>
+                                            <option value="10" selected>10</option>
+                                            <option value="20">20</option>
+                                            <option value="50">50</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="card-body p-2 p-md-3">
+                                    <div class="table-viewport-container">
+                                        <table class="table table-adaptive align-middle">
+                                            <thead id="theadMovimientos">
+                                                <tr>
+                                                    <th style="width: 7%;" class="sortable-th" data-sort="id">
+                                                        Código <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 9%;" class="sortable-th" data-sort="fecha">
+                                                        Fecha <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 13%;" class="sortable-th" data-sort="banco_nombre">
+                                                        Banco <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 12%;" class="sortable-th" data-sort="cuenta_numero">
+                                                        Cuenta <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 12%;" class="sortable-th" data-sort="empresa_legible">
+                                                        Empresa <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 10%;" class="sortable-th" data-sort="referencia_legible">
+                                                        Referencia <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 13%;" class="sortable-th" data-sort="descripcion_legible">
+                                                        Descripción <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 8%;" class="sortable-th" data-sort="debe">
+                                                        Debe <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 8%;" class="sortable-th" data-sort="haber">
+                                                        Haber <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 8%;">Acciones</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="movimientosTableBody"></tbody>
+                                        </table>
+                                    </div>
+                                    <div
+                                        id="paginationMovimientos"
+                                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3"
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de Saldos para Exportación (`public.vista_resumen_saldos_movimientos`) -->
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="card card-institutional">
+                                <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                    <span>
+                                        <i class="bi bi-table me-2 text-white"></i>
+                                        Vista Previa de Resumen de Saldos (<code class="text-white">public.vista_resumen_saldos_movimientos</code>) para Exportación
+                                    </span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <label class="small text-white mb-0">Filas:</label>
+                                        <select id="pageSizeExport" class="form-select form-select-sm" style="width: 80px;">
+                                            <option value="5">5</option>
+                                            <option value="10" selected>10</option>
+                                            <option value="20">20</option>
+                                            <option value="50">50</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="card-body p-2 p-md-3">
+                                    <div class="table-viewport-container">
+                                        <table class="table table-adaptive align-middle">
+                                            <thead id="theadExport">
+                                                <tr>
+                                                    <th style="width: 12%;" class="sortable-th" data-sort="id">
+                                                        Código (ID) <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 28%;" class="sortable-th" data-sort="banco_nombre">
+                                                        Banco <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 18%;" class="sortable-th" data-sort="fecha">
+                                                        Fecha <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 16%;" class="sortable-th" data-sort="moneda_legible">
+                                                        Moneda <span class="sort-indicator"></span>
+                                                    </th>
+                                                    <th style="width: 26%;" class="sortable-th" data-sort="monto">
+                                                        Monto Disponible <span class="sort-indicator"></span>
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="exportacionTableBody"></tbody>
+                                        </table>
+                                    </div>
+                                    <div
+                                        id="paginationExport"
+                                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3"
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- ======================================================================
+         3. VENTANAS MODALES (bancos, cuentas, saldos_banco, movimientos)
+         ====================================================================== -->
+
+    <!-- MODAL 1: TABLA `bancos` -->
+    <div
+        class="modal fade modal-institutional"
+        id="modalCrudBancos"
+        tabindex="-1"
+        aria-labelledby="modalCrudBancosLabel"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5 fw-bold mb-0" id="modalCrudBancosLabel">
+                        <i class="bi bi-bank me-2"></i>Gestión de Bancos
+                    </h2>
+                    <div class="d-flex align-items-center gap-2">
+                        <span id="badgeModeBanco" class="badge badge-status-active">Nuevo Banco</span>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <form id="formCrudBancos" class="row g-2 mb-3 p-3 rounded border bg-light">
+                        <input type="hidden" id="bancoId" value="" />
+                        <div class="col-12 col-md-5">
+                            <label for="bancoNombre" class="form-label small fw-bold mb-1">
+                                Nombre del Banco (<code>nombre</code>)
+                            </label>
+                            <input
+                                type="text"
+                                id="bancoNombre"
+                                class="form-control form-control-sm"
+                                placeholder="Ej. Banesco"
+                                required
+                            />
+                        </div>
+                        <div class="col-12 col-md-5">
+                            <label for="bancoDescripcion" class="form-label small fw-bold mb-1">
+                                Descripción (<code>descripcion</code>)
+                            </label>
+                            <input
+                                type="text"
+                                id="bancoDescripcion"
+                                class="form-control form-control-sm"
+                                placeholder="Ej. Banco Universal Principal"
+                            />
+                        </div>
+                        <div class="col-12 col-md-2 d-flex align-items-end gap-1">
+                            <button type="button" id="btnResetBanco" class="btn btn-sm btn-outline-secondary w-50">
+                                Limpiar
+                            </button>
+                            <button type="submit" class="btn btn-sm btn-institutional-primary w-50">
+                                <i class="bi bi-save me-1"></i>Guardar
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="row g-2 align-items-center mb-2">
+                        <div class="col-12 col-md-7">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input
+                                    type="text"
+                                    id="filterModalBancos"
+                                    class="form-control"
+                                    placeholder="Filtrar por código (ID), nombre del banco o descripción..."
+                                />
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-5 d-flex justify-content-md-end align-items-center gap-2">
+                            <label class="small fw-semibold mb-0">Filas por página:</label>
+                            <select id="pageSizeModalBancos" class="form-select form-select-sm" style="width: 80px;">
+                                <option value="5" selected>5</option>
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="table-viewport-container">
+                        <table class="table table-adaptive table-sm align-middle">
+                            <thead id="theadModalBancos">
+                                <tr>
+                                    <th style="width: 14%;" class="sortable-th" data-sort="id">
+                                        Código (ID) <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 34%;" class="sortable-th" data-sort="nombre_legible">
+                                        Nombre <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 34%;" class="sortable-th" data-sort="descripcion_legible">
+                                        Descripción <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 18%;">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="crudBancosTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div
+                        id="paginationModalBancos"
+                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2"
+                    ></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: TABLA `cuentas` -->
+    <div
+        class="modal fade modal-institutional"
+        id="modalCrudCuentas"
+        tabindex="-1"
+        aria-labelledby="modalCrudCuentasLabel"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5 fw-bold mb-0" id="modalCrudCuentasLabel">
+                        <i class="bi bi-credit-card-2-front me-2"></i>Gestión de Cuentas
+                    </h2>
+                    <div class="d-flex align-items-center gap-2">
+                        <span id="badgeModeCuenta" class="badge badge-status-active">Nueva Cuenta</span>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <form id="formCrudCuentas" class="row g-2 mb-3 p-3 rounded border bg-light">
+                        <input type="hidden" id="cuentaId" value="" />
+                        <div class="col-12 col-md-4">
+                            <label for="cuentaBancoId" class="form-label small fw-bold mb-1">
+                                Banco (<code>banco_id</code>)
+                            </label>
+                            <select id="cuentaBancoId" class="form-select form-select-sm" required>
+                                <option value="">Seleccione...</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label for="cuentaNumero" class="form-label small fw-bold mb-1">
+                                Número de Cuenta (<code>cuenta</code>)
+                            </label>
+                            <input
+                                type="text"
+                                id="cuentaNumero"
+                                class="form-control form-control-sm"
+                                placeholder="0134-XXXX..."
+                                required
+                            />
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label for="cuentaTipo" class="form-label small fw-bold mb-1">
+                                Tipo (<code>tipo</code>)
+                            </label>
+                            <select id="cuentaTipo" class="form-select form-select-sm" required>
+                                <option value="Corriente">Corriente</option>
+                                <option value="Ahorro">Ahorro</option>
+                                <option value="Custodia / Divisas">Custodia / Divisas</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-2 d-flex align-items-end gap-1">
+                            <button type="button" id="btnResetCuenta" class="btn btn-sm btn-outline-secondary w-50">
+                                Limpiar
+                            </button>
+                            <button type="submit" class="btn btn-sm btn-institutional-primary w-50">
+                                <i class="bi bi-save me-1"></i>Guardar
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="row g-2 align-items-center mb-2">
+                        <div class="col-12 col-md-7">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input
+                                    type="text"
+                                    id="filterModalCuentas"
+                                    class="form-control"
+                                    placeholder="Filtrar por código (ID), nombre de banco, número de cuenta o tipo..."
+                                />
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-5 d-flex justify-content-md-end align-items-center gap-2">
+                            <label class="small fw-semibold mb-0">Filas por página:</label>
+                            <select id="pageSizeModalCuentas" class="form-select form-select-sm" style="width: 80px;">
+                                <option value="5" selected>5</option>
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="table-viewport-container">
+                        <table class="table table-adaptive table-sm align-middle">
+                            <thead id="theadModalCuentas">
+                                <tr>
+                                    <th style="width: 12%;" class="sortable-th" data-sort="id">
+                                        Código (ID) <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 28%;" class="sortable-th" data-sort="banco_nombre">
+                                        Banco <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 26%;" class="sortable-th" data-sort="cuenta_legible">
+                                        Número de Cuenta <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 16%;" class="sortable-th" data-sort="tipo_legible">
+                                        Tipo <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 18%;">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="crudCuentasTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div
+                        id="paginationModalCuentas"
+                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2"
+                    ></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: TABLA `saldos_banco` -->
+    <div
+        class="modal fade modal-institutional"
+        id="modalCrudSaldosBanco"
+        tabindex="-1"
+        aria-labelledby="modalCrudSaldosBancoLabel"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5 fw-bold mb-0" id="modalCrudSaldosBancoLabel">
+                        <i class="bi bi-cash-stack me-2"></i>Gestión de Saldos de Banco
+                    </h2>
+                    <div class="d-flex align-items-center gap-2">
+                        <span id="badgeModeSaldo" class="badge badge-status-active">Nuevo Saldo</span>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <form id="formCrudSaldosBanco" class="row g-2 mb-3 p-3 rounded border bg-light">
+                        <input type="hidden" id="saldoId" value="" />
+                        <div class="col-12 col-md-3">
+                            <label for="saldoBancoId" class="form-label small fw-bold mb-1">
+                                Banco (<code>banco_id</code>)
+                            </label>
+                            <select id="saldoBancoId" class="form-select form-select-sm" required>
+                                <option value="">Seleccione...</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="saldoFecha" class="form-label small fw-bold mb-1">
+                                Fecha (<code>fecha</code>)
+                            </label>
+                            <input type="date" id="saldoFecha" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="saldoMoneda" class="form-label small fw-bold mb-1">
+                                Moneda (<code>moneda</code>)
+                            </label>
+                            <select id="saldoMoneda" class="form-select form-select-sm" required>
+                                <option value="VES">VES (Bolívares)</option>
+                                <option value="USD">USD (Dólares)</option>
+                                <option value="EUR">EUR (Euros)</option>
+                                <option value="USDT">USDT (Tether)</option>
+                                <option value="BNB">BNB (Binance Coin)</option>
+                                <option value="BTC">BTC (Bitcoin)</option>
+                                <option value="YEN">YEN (Yen Japonés)</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label for="saldoMonto" class="form-label small fw-bold mb-1">
+                                Monto Disponible (<code>monto</code>)
+                            </label>
+                            <input
+                                type="number"
+                                step="any"
+                                id="saldoMonto"
+                                class="form-control form-control-sm"
+                                placeholder="0.00"
+                                required
+                            />
+                        </div>
+                        <div class="col-12 col-md-2 d-flex align-items-end gap-1">
+                            <button type="button" id="btnResetSaldo" class="btn btn-sm btn-outline-secondary w-50">
+                                Limpiar
+                            </button>
+                            <button type="submit" class="btn btn-sm btn-institutional-accent w-50">
+                                <i class="bi bi-save me-1"></i>Guardar
+                            </button>
+                        </div>
+                    </form>
+
+                    <div class="row g-2 align-items-center mb-2">
+                        <div class="col-12 col-md-7">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input
+                                    type="text"
+                                    id="filterModalSaldos"
+                                    class="form-control"
+                                    placeholder="Filtrar por código (ID), nombre de banco, fecha, moneda o monto..."
+                                />
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-5 d-flex justify-content-md-end align-items-center gap-2">
+                            <label class="small fw-semibold mb-0">Filas por página:</label>
+                            <select id="pageSizeModalSaldos" class="form-select form-select-sm" style="width: 80px;">
+                                <option value="5" selected>5</option>
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="table-viewport-container">
+                        <table class="table table-adaptive table-sm align-middle">
+                            <thead id="theadModalSaldos">
+                                <tr>
+                                    <th style="width: 12%;" class="sortable-th" data-sort="id">
+                                        Código (ID) <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 28%;" class="sortable-th" data-sort="banco_nombre">
+                                        Banco <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 16%;" class="sortable-th" data-sort="fecha">
+                                        Fecha <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 14%;" class="sortable-th" data-sort="moneda_legible">
+                                        Moneda <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 16%;" class="sortable-th" data-sort="monto">
+                                        Monto <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 14%;">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modalSaldosTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div
+                        id="paginationModalSaldos"
+                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2"
+                    ></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 4: TABLA `movimientos` -->
+    <div
+        class="modal fade modal-institutional"
+        id="modalCrudMovimientos"
+        tabindex="-1"
+        aria-labelledby="modalCrudMovimientosLabel"
+        aria-hidden="true"
+    >
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title h5 fw-bold mb-0" id="modalCrudMovimientosLabel">
+                        <i class="bi bi-arrow-left-right me-2"></i>Gestión de Movimientos (<code class="text-white">public.movimientos</code>)
+                    </h2>
+                    <div class="d-flex align-items-center gap-2">
+                        <span id="badgeModeMovimiento" class="badge badge-status-active">Nuevo Movimiento</span>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <div id="movModalAlert" class="alert d-none py-2 small mb-3" role="alert"></div>
+
+                    <!-- SECCIÓN DE IMPORTACIÓN DESDE PLANTILLA CSV -->
+                    <div
+                        class="p-3 rounded border mb-3"
+                        style="background-color: rgba(11, 61, 46, 0.06); border-left: 4px solid var(--accent-orange) !important;"
+                    >
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                            <div>
+                                <h3 class="h6 fw-bold mb-1" style="color: var(--bg-green-deep);">
+                                    <i class="bi bi-filetype-csv me-1"></i>Importación de Movimientos desde Plantilla CSV
+                                </h3>
+                                <p class="small text-secondary mb-0">
+                                    1. <strong>Banco:</strong> Nombre del banco &nbsp;|&nbsp;
+                                    2. <strong>Cuenta:</strong> Nro. de cuenta (puede quedar vacío si se carga saldo directo a banco) &nbsp;|&nbsp;
+                                    3. <strong>Fecha:</strong> Formato obligatorio <code>DD/MM/YYYY</code>
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                id="btnDownloadPlantillaMovs"
+                                class="btn btn-sm btn-institutional-primary"
+                            >
+                                <i class="bi bi-file-earmark-arrow-down me-1"></i>1. Descargar Plantilla CSV (DD/MM/YYYY)
+                            </button>
+                        </div>
+
+                        <div class="row g-2 align-items-center mt-1">
+                            <div class="col-12 col-md-5">
+                                <input
+                                    type="file"
+                                    id="inputCsvMovimientos"
+                                    class="form-control form-control-sm"
+                                    accept=".csv,text/csv"
+                                />
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <div class="d-flex flex-column gap-1 small">
+                                    <div class="form-check mb-0">
+                                        <input
+                                            class="form-check-input"
+                                            type="checkbox"
+                                            id="chkAutoCreateBancoCuenta"
+                                            checked
+                                        />
+                                        <label class="form-check-label fw-semibold" for="chkAutoCreateBancoCuenta">
+                                            Crear banco/cuenta si no existe
+                                        </label>
+                                    </div>
+                                    <div class="text-secondary small">
+                                        <i class="bi bi-check2-circle me-1"></i>Los saldos se actualizan en <code>vista_resumen_saldos_movimientos</code>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <button
+                                    type="button"
+                                    id="btnImportCsvMovimientos"
+                                    class="btn btn-sm btn-institutional-accent w-100 py-2"
+                                >
+                                    <i class="bi bi-cloud-arrow-up-fill me-1"></i>2. Cargar Plantilla a Movimientos
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FORMULARIO MANUAL DE INGRESO / EDICIÓN DE MOVIMIENTOS -->
+                    <form id="formCrudMovimientos" class="row g-2 mb-3 p-3 rounded border bg-light">
+                        <input type="hidden" id="movId" value="" />
+                        <div class="col-12 col-md-3">
+                            <label for="movBancoId" class="form-label small fw-bold mb-1">
+                                Banco (<code>banco_id</code>)
+                            </label>
+                            <select id="movBancoId" class="form-select form-select-sm" required>
+                                <option value="">Seleccione...</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label for="movCuentaId" class="form-label small fw-bold mb-1">
+                                Cuenta (opcional si es directo a banco)
+                            </label>
+                            <select id="movCuentaId" class="form-select form-select-sm">
+                                <option value="">-- Directo a Banco (Sin cuenta) --</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="movFecha" class="form-label small fw-bold mb-1">
+                                Fecha (<code>fecha</code>)
+                            </label>
+                            <input type="date" id="movFecha" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="movMoneda" class="form-label small fw-bold mb-1">
+                                Moneda (<code>moneda</code>)
+                            </label>
+                            <select id="movMoneda" class="form-select form-select-sm" required>
+                                <option value="VES">VES</option>
+                                <option value="USD">USD</option>
+                                <option value="EUR">EUR</option>
+                                <option value="USDT">USDT</option>
+                                <option value="BNB">BNB</option>
+                                <option value="BTC">BTC</option>
+                                <option value="YEN">YEN</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="movTipo" class="form-label small fw-bold mb-1">
+                                Tipo (<code>tipo</code>)
+                            </label>
+                            <select id="movTipo" class="form-select form-select-sm">
+                                <option value="Crédito">Crédito</option>
+                                <option value="Débito">Débito</option>
+                                <option value="Transferencia">Transferencia</option>
+                                <option value="Saldo Directo">Saldo Directo</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label for="movEmpresa" class="form-label small fw-bold mb-1">
+                                Empresa (<code>empresa</code>)
+                            </label>
+                            <input type="text" id="movEmpresa" class="form-control form-control-sm" placeholder="Nombre de empresa" />
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="movReferencia" class="form-label small fw-bold mb-1">
+                                Referencia (<code>referencia</code>)
+                            </label>
+                            <input type="text" id="movReferencia" class="form-control form-control-sm" placeholder="Ref. bancaria" />
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label for="movDescripcion" class="form-label small fw-bold mb-1">
+                                Descripción (<code>descripcion</code>)
+                            </label>
+                            <input type="text" id="movDescripcion" class="form-control form-control-sm" placeholder="Concepto o detalle" />
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="movDebe" class="form-label small fw-bold mb-1">
+                                Debe (<code>debe</code>)
+                            </label>
+                            <input type="number" step="any" id="movDebe" class="form-control form-control-sm" value="0.00" />
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label for="movHaber" class="form-label small fw-bold mb-1">
+                                Haber (<code>haber</code>)
+                            </label>
+                            <input type="number" step="any" id="movHaber" class="form-control form-control-sm" value="0.00" />
+                        </div>
+                        <div class="col-12 d-flex justify-content-end gap-2 mt-2">
+                            <button type="button" id="btnResetMovimiento" class="btn btn-sm btn-outline-secondary">
+                                Limpiar
+                            </button>
+                            <button type="submit" class="btn btn-sm btn-institutional-primary">
+                                <i class="bi bi-save me-1"></i>Guardar Movimiento
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- TABLA PAGINADA, ORDENABLE Y FILTRABLE DENTRO DEL MODAL DE MOVIMIENTOS -->
+                    <div class="row g-2 align-items-center mb-2">
+                        <div class="col-12 col-md-7">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input
+                                    type="text"
+                                    id="filterModalMovimientos"
+                                    class="form-control"
+                                    placeholder="Filtrar por código, nombre de banco, nro de cuenta, empresa o referencia..."
+                                />
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-5 d-flex justify-content-md-end align-items-center gap-2">
+                            <label class="small fw-semibold mb-0">Filas por página:</label>
+                            <select id="pageSizeModalMovimientos" class="form-select form-select-sm" style="width: 80px;">
+                                <option value="5" selected>5</option>
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="table-viewport-container">
+                        <table class="table table-adaptive table-sm align-middle">
+                            <thead id="theadModalMovimientos">
+                                <tr>
+                                    <th style="width: 7%;" class="sortable-th" data-sort="id">
+                                        Código <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 10%;" class="sortable-th" data-sort="fecha">
+                                        Fecha <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 14%;" class="sortable-th" data-sort="banco_nombre">
+                                        Banco <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 13%;" class="sortable-th" data-sort="cuenta_numero">
+                                        Cuenta <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 12%;" class="sortable-th" data-sort="empresa_legible">
+                                        Empresa <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 10%;" class="sortable-th" data-sort="referencia_legible">
+                                        Referencia <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 12%;" class="sortable-th" data-sort="descripcion_legible">
+                                        Descripción <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 7%;" class="sortable-th" data-sort="debe">
+                                        Debe <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 7%;" class="sortable-th" data-sort="haber">
+                                        Haber <span class="sort-indicator"></span>
+                                    </th>
+                                    <th style="width: 8%;">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modalMovimientosTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div
+                        id="paginationModalMovimientos"
+                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2"
+                    ></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5.3 Bundle JS -->
+    <script
+        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"
+    ></script>
+    <!-- Lógica Principal ES6 Module -->
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>
