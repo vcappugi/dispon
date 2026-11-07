@@ -298,6 +298,10 @@ function updateAuthView(user) {
     } else {
         appWorkspace?.classList.add('d-none');
         loginSection?.classList.remove('d-none');
+        const inputUsuario = document.getElementById('inputUsuario');
+        const inputClave = document.getElementById('inputClave');
+        if (inputUsuario) inputUsuario.value = '';
+        if (inputClave) inputClave.value = '';
     }
 }
 
@@ -1039,8 +1043,9 @@ function renderMovimientosTable() {
 
     tbody.innerHTML = '';
     pageRows.forEach((m) => {
-        const debeFmt = Number(m.debe || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const haberFmt = Number(m.haber || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const mon = m.moneda_legible || 'VES';
+        const debeFmt = formatCurrencyAmount(m.debe, mon);
+        const haberFmt = formatCurrencyAmount(m.haber, mon);
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -1147,8 +1152,9 @@ function renderModalMovimientosTable() {
 
     tbody.innerHTML = '';
     pageRows.forEach((m) => {
-        const debeFmt = Number(m.debe || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const haberFmt = Number(m.haber || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const mon = m.moneda_legible || 'VES';
+        const debeFmt = formatCurrencyAmount(m.debe, mon);
+        const haberFmt = formatCurrencyAmount(m.haber, mon);
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -1632,10 +1638,8 @@ function renderExportTable() {
 
     expBody.innerHTML = '';
     pageRows.forEach((s) => {
-        const montoFmt = Number(s.monto || 0).toLocaleString('es-VE', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        });
+        const mon = s.moneda_legible || 'VES';
+        const montoFmt = formatCurrencyAmount(s.monto, mon);
 
         const trExp = document.createElement('tr');
         trExp.innerHTML = `
@@ -1850,6 +1854,198 @@ function renderDashboardComparativeBars(vistaList) {
     }
 }
 
+const PIE_SLICE_PALETTE = [
+    '#0b3d2e', // Verde profundo institucional
+    '#0a192f', // Azul profundo institucional
+    '#f97316', // Naranja acento institucional
+    '#145a43', // Verde esmeralda medio
+    '#16325b', // Azul acero institucional
+    '#ea580c', // Naranja oscuro institucional
+    '#0f766e', // Verde azulado oscuro
+    '#1e3a8a'  // Azul marino intenso
+];
+
+/**
+ * Renderiza en la parte superior del Dashboard un gráfico de torta (SVG vectorial interactivo)
+ * para cada moneda con movimientos, mostrando la distribución porcentual y en monto por banco.
+ * @param {Map<string, object>} statsByMoneda
+ * @param {Array<string>} currenciesOrder
+ */
+function renderDashboardPieChartsByCurrency(statsByMoneda, currenciesOrder) {
+    const container = document.getElementById('dashPieChartsByCurrency');
+    const subtitleBadge = document.getElementById('dashPieChartsSubtitle');
+    if (!container) return;
+
+    const currenciesWithData = currenciesOrder.filter((mon) => {
+        const st = statsByMoneda.get(mon);
+        if (!st || st.totalsByBanco.size === 0) return false;
+        let sumAbs = 0;
+        st.totalsByBanco.forEach((val) => {
+            sumAbs += Math.abs(Number(val || 0));
+        });
+        return sumAbs > 0 || st.filasVista > 0;
+    });
+
+    if (subtitleBadge) {
+        subtitleBadge.textContent = `${currenciesWithData.length} moneda(s) con distribución activa`;
+    }
+
+    if (currenciesWithData.length === 0) {
+        container.innerHTML = `
+            <div class="col-12 text-center text-muted small py-3">
+                Sin movimientos registrados para generar gráficos de torta por moneda con los filtros actuales.
+            </div>
+        `;
+        return;
+    }
+
+    const colClass =
+        currenciesWithData.length === 1
+            ? 'col-12 col-lg-6 mx-auto'
+            : currenciesWithData.length === 2
+            ? 'col-12 col-lg-6'
+            : 'col-12 col-md-6 col-xl-4';
+
+    container.innerHTML = currenciesWithData
+        .map((mon) => {
+            const st = statsByMoneda.get(mon);
+            const bankEntries = [...st.totalsByBanco.entries()]
+                .map(([bancoNombre, saldo]) => ({
+                    bancoNombre,
+                    saldo: Number(saldo || 0),
+                    absSaldo: Math.abs(Number(saldo || 0))
+                }))
+                .sort((a, b) => b.absSaldo - a.absSaldo);
+
+            const totalAbs = bankEntries.reduce((acc, item) => acc + item.absSaldo, 0);
+            const netoMonedaFmt = formatCurrencyAmount(st.neto, mon);
+
+            const cx = 100;
+            const cy = 100;
+            const r = 82;
+            let svgPaths = '';
+            let svgLabels = '';
+
+            if (totalAbs <= 0) {
+                svgPaths = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#cbd5e1" stroke="#ffffff" stroke-width="2" />`;
+                svgLabels = `<text x="${cx}" y="${cy + 4}" text-anchor="middle" fill="#1e293b" font-size="12" font-weight="700">0%</text>`;
+            } else if (bankEntries.length === 1) {
+                const only = bankEntries[0];
+                const color = PIE_SLICE_PALETTE[0];
+                const fmtVal = formatCurrencyAmount(only.saldo, mon);
+                svgPaths = `
+                    <circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="#ffffff" stroke-width="2" class="pie-svg-slice">
+                        <title>${only.bancoNombre}: ${fmtVal} ${mon} (100%)</title>
+                    </circle>
+                `;
+                svgLabels = `
+                    <text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="700">
+                        100%
+                    </text>
+                `;
+            } else {
+                let currentAngle = -Math.PI / 2;
+                bankEntries.forEach((entry, idx) => {
+                    if (entry.absSaldo <= 0) return;
+                    const fraction = entry.absSaldo / totalAbs;
+                    const pct = fraction * 100;
+                    const pctStr = pct.toFixed(1);
+                    const sliceAngle = fraction * Math.PI * 2;
+                    const endAngle = currentAngle + sliceAngle;
+
+                    const x1 = (cx + r * Math.cos(currentAngle)).toFixed(2);
+                    const y1 = (cy + r * Math.sin(currentAngle)).toFixed(2);
+                    const x2 = (cx + r * Math.cos(endAngle)).toFixed(2);
+                    const y2 = (cy + r * Math.sin(endAngle)).toFixed(2);
+                    const largeArc = sliceAngle > Math.PI ? 1 : 0;
+                    const color = PIE_SLICE_PALETTE[idx % PIE_SLICE_PALETTE.length];
+                    const fmtVal = formatCurrencyAmount(entry.saldo, mon);
+
+                    svgPaths += `
+                        <path
+                            d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z"
+                            fill="${color}"
+                            stroke="#ffffff"
+                            stroke-width="2"
+                            class="pie-svg-slice"
+                        >
+                            <title>${entry.bancoNombre}: ${fmtVal} ${mon} (${pctStr}%)</title>
+                        </path>
+                    `;
+
+                    if (pct >= 8) {
+                        const midAngle = currentAngle + sliceAngle / 2;
+                        const labelR = r * 0.62;
+                        const lx = (cx + labelR * Math.cos(midAngle)).toFixed(2);
+                        const ly = (cy + labelR * Math.sin(midAngle) + 4).toFixed(2);
+                        svgLabels += `
+                            <text
+                                x="${lx}"
+                                y="${ly}"
+                                text-anchor="middle"
+                                fill="#ffffff"
+                                font-size="11"
+                                font-weight="700"
+                                pointer-events="none"
+                            >${Math.round(pct)}%</text>
+                        `;
+                    }
+
+                    currentAngle = endAngle;
+                });
+            }
+
+            const legendHtml = bankEntries
+                .map((entry, idx) => {
+                    const color = PIE_SLICE_PALETTE[idx % PIE_SLICE_PALETTE.length];
+                    const pct = totalAbs > 0 ? ((entry.absSaldo / totalAbs) * 100).toFixed(1) : '0.0';
+                    const fmtVal = formatCurrencyAmount(entry.saldo, mon);
+                    return `
+                        <div class="d-flex align-items-center justify-content-between gap-2 py-1 border-bottom small">
+                            <div class="d-flex align-items-center gap-2 text-truncate">
+                                <span class="pie-legend-swatch" style="background-color: ${color};"></span>
+                                <span class="fw-semibold text-truncate" title="${entry.bancoNombre}">${entry.bancoNombre}</span>
+                            </div>
+                            <div class="text-nowrap fw-bold">
+                                ${fmtVal} <span class="text-secondary fw-normal">(${pct}%)</span>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+
+            return `
+                <div class="${colClass}">
+                    <div class="pie-currency-card">
+                        <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-2">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge badge-status-active">${mon}</span>
+                                <span class="small fw-bold text-uppercase" style="color: var(--bg-green-deep);">
+                                    Distribución en ${mon}
+                                </span>
+                            </div>
+                            <span class="small fw-bold" style="color: var(--bg-blue-deep);">
+                                Total: ${netoMonedaFmt} ${mon}
+                            </span>
+                        </div>
+                        <div class="d-flex flex-column flex-sm-row align-items-center gap-3">
+                            <div class="pie-svg-wrapper">
+                                <svg viewBox="0 0 200 200" width="150" height="150" role="img" aria-label="Gráfico de torta ${mon}">
+                                    ${svgPaths}
+                                    ${svgLabels}
+                                </svg>
+                            </div>
+                            <div class="flex-grow-1 w-100">
+                                ${legendHtml}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        })
+        .join('');
+}
+
 /**
  * 7. Actualiza todos los indicadores del Dashboard tomando los saldos bancarios
  *    y métricas de flujo directamente desde `public.vista_resumen_saldos_movimientos`
@@ -1928,6 +2124,9 @@ function renderDashboardSummary() {
     const currenciesForCards = filterMoneda
         ? allCurrenciesOrder.filter((m) => m === filterMoneda)
         : allCurrenciesOrder;
+
+    // Renderizar en la parte superior del Dashboard los gráficos de torta por banco en cada moneda
+    renderDashboardPieChartsByCurrency(statsByMoneda, currenciesForCards);
 
     // Renderizar Fila 1: Tarjetas de Saldo Disponible por cada moneda (VES, USD, EUR, USDT, BNB, BTC, YEN)
     const currencyCardsContainer = document.getElementById('dashCurrencyCardsContainer');
@@ -2196,12 +2395,13 @@ function renderDashboardMovimientosTable() {
         return;
     }
 
-    const fmtNum = (n) =>
-        Number(n || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
     tbody.innerHTML = '';
     pageRows.forEach((m) => {
+        const mon = m.moneda_legible || 'VES';
+        const debeFmt = formatCurrencyAmount(m.debe, mon);
+        const haberFmt = formatCurrencyAmount(m.haber, mon);
         const neto = Number(m.flujo_neto || 0);
+        const netoFmt = formatCurrencyAmount(neto, mon);
         const netoColor = neto >= 0 ? 'var(--bg-green-deep)' : 'var(--accent-orange-dark)';
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -2209,12 +2409,12 @@ function renderDashboardMovimientosTable() {
             <td data-label="Banco" class="fw-semibold">${m.banco_nombre}</td>
             <td data-label="Cuenta" class="small">${m.cuenta_numero}</td>
             <td data-label="Fecha">${m.fecha || '-'}</td>
-            <td data-label="Moneda"><span class="badge badge-status-active">${m.moneda_legible}</span></td>
+            <td data-label="Moneda"><span class="badge badge-status-active">${mon}</span></td>
             <td data-label="Referencia"><code>${m.referencia_legible || '-'}</code></td>
             <td data-label="Tipo"><span class="badge badge-status-alert">${m.tipo_legible || '-'}</span></td>
-            <td data-label="Debe" class="fw-bold" style="color: var(--bg-green-deep);">${fmtNum(m.debe)}</td>
-            <td data-label="Haber" class="fw-bold" style="color: var(--accent-orange-dark);">${fmtNum(m.haber)}</td>
-            <td data-label="Neto" class="fw-bold" style="color: ${netoColor};">${neto >= 0 ? '+' : ''}${fmtNum(neto)}</td>
+            <td data-label="Debe" class="fw-bold" style="color: var(--bg-green-deep);">${debeFmt}</td>
+            <td data-label="Haber" class="fw-bold" style="color: var(--accent-orange-dark);">${haberFmt}</td>
+            <td data-label="Neto" class="fw-bold" style="color: ${netoColor};">${neto >= 0 ? '+' : ''}${netoFmt}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -2404,7 +2604,6 @@ function exportMovimientosCsv() {
 
 function initAppEvents() {
     const loginForm = document.getElementById('loginForm');
-    const btnFillTestUser = document.getElementById('btnFillTestUser');
     const btnTogglePassword = document.getElementById('btnTogglePassword');
     const inputUsuario = document.getElementById('inputUsuario');
     const inputClave = document.getElementById('inputClave');
@@ -2626,12 +2825,6 @@ function initAppEvents() {
         tableStates.movimientos.page = 1;
         renderMovimientosTable();
         renderExportTable();
-    });
-
-    btnFillTestUser?.addEventListener('click', () => {
-        if (inputUsuario) inputUsuario.value = 'vcappugi';
-        if (inputClave) inputClave.value = '10838729';
-        hideLoginAlert();
     });
 
     if (btnTogglePassword && inputClave) {

@@ -527,3 +527,42 @@ body {
         flex-shrink: 0;
     }
 }
+
+/* ==========================================================================
+   GRÁFICOS DE TORTA POR MONEDA (DASHBOARD)
+   ========================================================================== */
+
+.pie-currency-card {
+    background-color: var(--accent-white);
+    border: 1px solid #cbd5e1;
+    border-top: 3px solid var(--bg-green-deep);
+    border-radius: 0.45rem;
+    padding: 0.75rem 0.9rem;
+    height: 100%;
+}
+
+.pie-svg-wrapper {
+    width: 150px;
+    height: 150px;
+    flex-shrink: 0;
+}
+
+.pie-svg-slice {
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    transform-origin: 100px 100px;
+    cursor: pointer;
+}
+
+.pie-svg-slice:hover {
+    opacity: 0.88;
+    transform: scale(1.03);
+}
+
+.pie-legend-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+}

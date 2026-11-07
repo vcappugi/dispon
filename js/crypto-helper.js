@@ -299,6 +299,75 @@ export function verifyBcryptHash(plainPassword, bcryptHash) {
 }
 
 /**
+ * Genera un hash Bcrypt ($2y$) compatible con PHP `password_hash` y PostgreSQL `crypt(..., gen_salt('bf', cost))`
+ * en JavaScript ES6+ puro sin librerías externas.
+ * @param {string} plainPassword
+ * @param {number} [cost=10]
+ * @param {string} [customSalt22]
+ * @returns {string}
+ */
+export function generateBcryptHash(plainPassword, cost = 10, customSalt22 = '') {
+    let saltStr = customSalt22;
+    if (!saltStr || saltStr.length !== 22) {
+        const randBytes = new Uint8Array(16);
+        if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.getRandomValues) {
+            globalThis.crypto.getRandomValues(randBytes);
+        } else {
+            for (let i = 0; i < 16; i++) {
+                randBytes[i] = Math.floor(Math.random() * 256);
+            }
+        }
+        saltStr = bcryptBase64Encode(randBytes).slice(0, 22);
+    }
+
+    const saltBytes = bcryptBase64Decode(saltStr, 16);
+    const encoder = new TextEncoder();
+    const rawPass = encoder.encode(String(plainPassword));
+    const passLen = Math.min(rawPass.length, 72);
+    const keyBytes = new Uint8Array(passLen + 1);
+    keyBytes.set(rawPass.subarray(0, passLen), 0);
+    keyBytes[passLen] = 0;
+
+    const { P, S } = getBlowfishInitialState();
+    eksBlowfishExpand(P, S, saltBytes, keyBytes);
+
+    const rounds = 1 << cost;
+    for (let r = 0; r < rounds; r++) {
+        eksBlowfishExpand(P, S, null, keyBytes);
+        eksBlowfishExpand(P, S, null, saltBytes);
+    }
+
+    const cdata = new Uint32Array([
+        0x4f727068, 0x65616e42, 0x65686f6c, 0x64657253, 0x63727944, 0x6f756274
+    ]);
+    const pair = new Uint32Array(2);
+
+    for (let b = 0; b < 6; b += 2) {
+        pair[0] = cdata[b];
+        pair[1] = cdata[b + 1];
+        for (let r = 0; r < 64; r++) {
+            blowfishEncipher(pair[0], pair[1], P, S, pair);
+        }
+        cdata[b] = pair[0];
+        cdata[b + 1] = pair[1];
+    }
+
+    const outBytes = new Uint8Array(23);
+    for (let i = 0; i < 6; i++) {
+        const w = cdata[i];
+        const base = i * 4;
+        if (base < 23) outBytes[base] = (w >>> 24) & 0xff;
+        if (base + 1 < 23) outBytes[base + 1] = (w >>> 16) & 0xff;
+        if (base + 2 < 23) outBytes[base + 2] = (w >>> 8) & 0xff;
+        if (base + 3 < 23) outBytes[base + 3] = w & 0xff;
+    }
+
+    const computedTail = bcryptBase64Encode(outBytes).slice(0, 31);
+    const costStr = String(cost).padStart(2, '0');
+    return `$2y$${costStr}$${saltStr}${computedTail}`;
+}
+
+/**
  * Encripta un texto sensible en el cliente o mediante función RPC de Supabase (`encrypt_data`).
  * @param {string} plainText Texto legible a proteger.
  * @param {object|null} supabaseClient Instancia opcional de Supabase.

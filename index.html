@@ -49,18 +49,10 @@
                         style="background-color: rgba(10, 25, 47, 0.65); border-left: 4px solid var(--accent-orange);"
                     >
                         <div class="small text-white fw-bold mb-1">
-                            <i class="bi bi-person-badge-fill me-1"></i> Credenciales de Prueba Configuradas:
+                            <i class="bi bi-lock-fill me-1"></i> Acceso Restringido:
                         </div>
-                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 small text-white">
-                            <span>Usuario: <strong class="text-white">vcappugi</strong></span>
-                            <span>Clave: <strong class="text-white">10838729</strong></span>
-                            <button
-                                id="btnFillTestUser"
-                                type="button"
-                                class="btn btn-sm btn-institutional-white py-0 px-2"
-                            >
-                                Cargar datos
-                            </button>
+                        <div class="small text-white opacity-75">
+                            Ingrese su nombre de usuario y clave registrados para acceder a los módulos de disponibilidad bancaria.
                         </div>
                     </div>
                 </div>
@@ -78,7 +70,7 @@
 
                         <div id="loginAlert" class="alert d-none" role="alert"></div>
 
-                        <form id="loginForm" novalidate>
+                        <form id="loginForm" novalidate autocomplete="off">
                             <div class="row g-3">
                                 <div class="col-12 col-md-6">
                                     <label for="inputUsuario" class="form-label fw-bold">
@@ -90,10 +82,10 @@
                                             type="text"
                                             id="inputUsuario"
                                             class="form-control"
-                                            placeholder="Ej. vcappugi"
-                                            value="vcappugi"
+                                            placeholder="Ingrese su usuario"
+                                            value=""
                                             required
-                                            autocomplete="username"
+                                            autocomplete="off"
                                         />
                                     </div>
                                 </div>
@@ -109,9 +101,9 @@
                                             id="inputClave"
                                             class="form-control"
                                             placeholder="Ingrese su clave"
-                                            value="10838729"
+                                            value=""
                                             required
-                                            autocomplete="current-password"
+                                            autocomplete="new-password"
                                         />
                                         <button
                                             id="btnTogglePassword"
@@ -211,8 +203,8 @@
                 <div class="d-flex flex-wrap align-items-center gap-2">
                     <span class="badge badge-status-active px-3 py-2">
                         <i class="bi bi-person-check-fill me-1"></i>
-                        Usuario: <strong id="activeUserName">vcappugi</strong>
-                        (<span id="activeUserRole">admin</span>)
+                        Usuario: <strong id="activeUserName">--</strong>
+                        (<span id="activeUserRole">--</span>)
                     </span>
                     <button id="btnTopbarLogout" type="button" class="btn btn-sm btn-institutional-accent">
                         <i class="bi bi-power me-1"></i> Salir
@@ -343,6 +335,26 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
                                     >
                                         <i class="bi bi-arrow-repeat me-1"></i> Actualizar
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECCIÓN SUPERIOR: GRÁFICOS DE TORTA DE DISTRIBUCIÓN POR BANCO EN CADA MONEDA -->
+                    <div class="card card-institutional mb-3">
+                        <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <span>
+                                <i class="bi bi-pie-chart-fill me-2 text-white"></i>
+                                Distribución de Saldos por Banco en Cada Moneda (<code class="text-white">public.vista_resumen_saldos_movimientos</code>)
+                            </span>
+                            <span id="dashPieChartsSubtitle" class="badge badge-status-active">
+                                Participación porcentual (%) por moneda
+                            </span>
+                        </div>
+                        <div class="card-body p-2 p-md-3">
+                            <div id="dashPieChartsByCurrency" class="row g-3">
+                                <div class="col-12 text-center text-muted small py-3">
+                                    Cargando gráficos de torta por moneda...
                                 </div>
                             </div>
                         </div>
@@ -599,7 +611,7 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
                                         <i class="bi bi-arrow-left-right me-2 text-white"></i>
                                         Movimientos Bancarios y Flujo Neto (<code class="text-white">public.movimientos</code>)
                                     </span>
-                                    <span id="dashUserCard" class="badge badge-status-active">vcappugi</span>
+                                    <span id="dashUserCard" class="badge badge-status-active">Sesión activa</span>
                                 </div>
                                 <div class="card-body p-2 p-md-3">
                                     <div class="row g-2 align-items-center mb-2">
