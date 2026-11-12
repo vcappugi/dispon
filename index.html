@@ -29,8 +29,7 @@
                 <div class="col-12 col-lg-5 login-banner-panel">
                     <div>
                         <div
-                            class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill mb-3"
-                            style="background-color: rgba(249, 115, 22, 0.25); border: 1px solid var(--accent-orange);"
+                            class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill mb-3 bg-white bg-opacity-25 border border-white border-opacity-50"
                         >
                             <i class="bi bi-shield-lock-fill text-white fs-5"></i>
                             <span class="small fw-bold text-white text-uppercase">Supabase + Clave Encriptada</span>
@@ -45,8 +44,7 @@
                     </div>
 
                     <div
-                        class="p-3 rounded-3"
-                        style="background-color: rgba(10, 25, 47, 0.65); border-left: 4px solid var(--accent-orange);"
+                        class="p-3 rounded-3 bg-black bg-opacity-25 border-start border-4 border-white"
                     >
                         <div class="small text-white fw-bold mb-1">
                             <i class="bi bi-lock-fill me-1"></i> Acceso Restringido:
@@ -60,8 +58,8 @@
                 <div class="col-12 col-lg-7 login-form-panel d-flex flex-column justify-content-center">
                     <div class="w-100">
                         <div class="d-flex align-items-center justify-content-between mb-3">
-                            <h2 class="h4 fw-bold mb-0" style="color: var(--bg-green-deep);">
-                                <i class="bi bi-box-arrow-in-right me-2" style="color: var(--accent-orange);"></i>Iniciar Sesión
+                            <h2 class="h4 fw-bold mb-0 text-primary">
+                                <i class="bi bi-box-arrow-in-right me-2"></i>Iniciar Sesión
                             </h2>
                             <span id="loginSupabaseStatus" class="badge badge-status-active">
                                 <i class="bi bi-database-check me-1"></i> Tabla: usuarios
@@ -259,29 +257,80 @@
                                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                                     <span>
                                         <i class="bi bi-database-fill-gear me-1 text-warning"></i>
-                                        Definición SQL de la vista <code>public.vista_resumen_saldos_movimientos</code> (guardada en <code>sql/02_vista_resumen_saldos_movimientos.sql</code>):
+                                        SQL de Función de Desencriptación (<code>sql/03_funcion_desencriptar_texto.sql</code>) y Vista (<code>sql/02_vista_resumen_saldos_movimientos.sql</code>):
                                     </span>
                                     <button id="btnCopySqlVista" type="button" class="btn btn-sm btn-institutional-accent py-0 px-2">
                                         <i class="bi bi-clipboard me-1"></i> Copiar SQL
                                     </button>
                                 </div>
-                                <pre id="sqlVistaCodeBlock" class="mb-0 p-2 rounded bg-black text-white small" style="overflow-x: auto;">CREATE OR REPLACE VIEW public.vista_resumen_saldos_movimientos
+                                <pre id="sqlVistaCodeBlock" class="mb-0 p-2 rounded bg-black text-white small" style="overflow-x: auto;">CREATE OR REPLACE FUNCTION public.desencriptar_texto(
+    p_cipher_text TEXT,
+    p_secret_key TEXT DEFAULT 'disp_client_sym_layer_2026'
+)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+    v_key TEXT;
+    v_b64 TEXT;
+    v_cipher_bytes BYTEA;
+    v_key_bytes BYTEA;
+    v_result_bytes BYTEA;
+    v_data_len INTEGER;
+    v_key_len INTEGER;
+    i INTEGER;
+BEGIN
+    IF p_cipher_text IS NULL OR p_cipher_text = '' THEN
+        RETURN p_cipher_text;
+    END IF;
+    v_key := COALESCE(NULLIF(p_secret_key, ''), 'disp_client_sym_layer_2026');
+    IF left(p_cipher_text, 6) = 'ENCv1:' THEN
+        BEGIN
+            v_b64 := substring(p_cipher_text FROM 7);
+            v_cipher_bytes := decode(v_b64, 'base64');
+            v_key_bytes := convert_to(v_key, 'UTF8');
+            v_data_len := octet_length(v_cipher_bytes);
+            v_key_len := octet_length(v_key_bytes);
+            IF v_data_len = 0 OR v_key_len = 0 THEN RETURN ''; END IF;
+            v_result_bytes := v_cipher_bytes;
+            FOR i IN 0 .. (v_data_len - 1) LOOP
+                v_result_bytes := set_byte(
+                    v_result_bytes,
+                    i,
+                    get_byte(v_cipher_bytes, i) # get_byte(v_key_bytes, mod(i, v_key_len))
+                );
+            END LOOP;
+            RETURN convert_from(v_result_bytes, 'UTF8');
+        EXCEPTION WHEN OTHERS THEN
+            RETURN p_cipher_text;
+        END;
+    END IF;
+    RETURN p_cipher_text;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.desencriptar_texto(TEXT, TEXT) TO anon, authenticated;
+
+CREATE OR REPLACE VIEW public.vista_resumen_saldos_movimientos
 WITH (security_invoker = true)
 AS
 SELECT
     ROW_NUMBER() OVER (ORDER BY m.fecha DESC, m.banco_id ASC, m.moneda ASC) AS id,
     m.banco_id,
-    b.nombre AS banco_nombre,
-    b.descripcion AS banco_descripcion,
+    public.desencriptar_texto(b.nombre) AS banco_nombre,
+    public.desencriptar_texto(b.descripcion) AS banco_descripcion,
     m.fecha,
-    COALESCE(m.moneda, 'VES') AS moneda,
+    COALESCE(public.desencriptar_texto(m.moneda), 'VES') AS moneda,
     COUNT(m.id)::BIGINT AS total_movimientos,
     COUNT(m.id) FILTER (WHERE m.cuenta_id IS NOT NULL)::BIGINT AS movimientos_con_cuenta,
     COUNT(m.id) FILTER (WHERE m.cuenta_id IS NULL)::BIGINT AS movimientos_directo_banco,
     COUNT(DISTINCT m.cuenta_id)::BIGINT AS total_cuentas_movidas,
     COALESCE(SUM(m.debe), 0)::NUMERIC(18, 2) AS total_debe,
     COALESCE(SUM(m.haber), 0)::NUMERIC(18, 2) AS total_haber,
-    COALESCE(SUM(COALESCE(m.debe, 0) - COALESCE(m.haber, 0)), 0)::NUMERIC(18, 2) AS saldo_disponible,
+    COALESCE(SUM(COALESCE(m.haber, 0) - COALESCE(m.debe, 0)), 0)::NUMERIC(18, 2) AS saldo_disponible,
     MIN(m.fecha) AS primera_fecha,
     MAX(m.fecha) AS ultima_fecha
 FROM public.movimientos m
@@ -362,8 +411,8 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
 
                     <!-- FILA 1: INDICADORES DE SALDOS BANCARIOS RESUMIDOS POR MONEDA DESDE `vista_resumen_saldos_movimientos` -->
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                        <span class="small fw-bold text-uppercase" style="color: var(--bg-green-deep);">
-                            <i class="bi bi-wallet2 me-1" style="color: var(--accent-orange);"></i>
+                        <span class="small fw-bold text-uppercase text-primary">
+                            <i class="bi bi-wallet2 me-1"></i>
                             Saldos Bancarios Resumidos por Moneda (<code>public.vista_resumen_saldos_movimientos</code> — VES, USD, EUR, USDT, BNB, BTC, YEN)
                         </span>
                         <div class="d-flex flex-wrap gap-2">
@@ -392,8 +441,8 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
 
                     <!-- FILA 2: INDICADORES DE FLUJO ACUMULADO SEPARADOS POR MONEDA DESDE `vista_resumen_saldos_movimientos` -->
                     <div class="d-flex align-items-center justify-content-between mb-2">
-                        <span class="small fw-bold text-uppercase" style="color: var(--bg-blue-deep);">
-                            <i class="bi bi-arrow-left-right me-1" style="color: var(--accent-orange);"></i>
+                        <span class="small fw-bold text-uppercase text-dark">
+                            <i class="bi bi-arrow-left-right me-1 text-primary"></i>
                             Totales de Debe, Haber y Saldo Neto Total por Moneda (<code>public.vista_resumen_saldos_movimientos</code>)
                         </span>
                         <span id="dashMovsCorteBadge" class="badge badge-status-alert">Último mov: --</span>
@@ -413,7 +462,7 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
                                             <i class="bi bi-arrow-down-left-circle-fill"></i>
                                         </span>
                                     </div>
-                                    <div id="dashMovTotalDebe" class="small fw-bold" style="color: var(--bg-green-deep);">
+                                    <div id="dashMovTotalDebe" class="small fw-bold text-danger">
                                         0,00
                                     </div>
                                 </div>
@@ -434,7 +483,7 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
                                             <i class="bi bi-arrow-up-right-circle-fill"></i>
                                         </span>
                                     </div>
-                                    <div id="dashMovTotalHaber" class="small fw-bold" style="color: var(--accent-orange-dark);">
+                                    <div id="dashMovTotalHaber" class="small fw-bold text-success">
                                         0,00
                                     </div>
                                 </div>
@@ -447,7 +496,7 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
                                     <div class="d-flex align-items-start justify-content-between mb-2">
                                         <div>
                                             <p class="text-uppercase small fw-bold text-secondary mb-1">
-                                                Saldo Neto Total (Debe - Haber)
+                                                Saldo Neto Total (Crédito - Débito)
                                             </p>
                                             <div id="dashSubMovNeto" class="small text-secondary">Saldo neto por moneda (sin mezclar divisas)</div>
                                         </div>
@@ -499,7 +548,7 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
                                         <i class="bi bi-pie-chart-fill me-2 text-white"></i>
                                         Saldos por Banco (<code class="text-white">vista_resumen_saldos_movimientos</code>)
                                     </span>
-                                    <span class="badge badge-status-active">Saldo Disponible (Debe - Haber)</span>
+                                    <span class="badge badge-status-active">Saldo Disponible (Crédito - Débito)</span>
                                 </div>
                                 <div id="dashKpiBarsSaldos" class="card-body p-3">
                                     <div class="text-muted small text-center py-2">Cargando indicadores de la vista...</div>
@@ -1429,12 +1478,11 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
 
                     <!-- SECCIÓN DE IMPORTACIÓN DESDE PLANTILLA CSV -->
                     <div
-                        class="p-3 rounded border mb-3"
-                        style="background-color: rgba(11, 61, 46, 0.06); border-left: 4px solid var(--accent-orange) !important;"
+                        class="p-3 rounded border mb-3 bg-light border-start border-4 border-primary"
                     >
                         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                             <div>
-                                <h3 class="h6 fw-bold mb-1" style="color: var(--bg-green-deep);">
+                                <h3 class="h6 fw-bold mb-1 text-primary">
                                     <i class="bi bi-filetype-csv me-1"></i>Importación de Movimientos desde Plantilla CSV
                                 </h3>
                                 <p class="small text-secondary mb-0">
@@ -1491,6 +1539,209 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
                         </div>
                     </div>
 
+                    <!-- SECCIÓN DE IMPORTACIÓN DE ESTADO DE CUENTA DESDE PDF (PDF.js) -->
+                    <div
+                        class="p-3 rounded border mb-3 bg-light border-start border-4 border-dark"
+                    >
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                            <div>
+                                <h3 class="h6 fw-bold mb-1 text-dark">
+                                    <i class="bi bi-file-earmark-pdf-fill me-1 text-danger"></i>Importación de Estado de Cuenta desde PDF (Extracción Estructurada PDF.js)
+                                </h3>
+                                <p class="small text-secondary mb-0">
+                                    Mapeo automático a 8 campos estrictos:
+                                    <strong>1. Banco</strong> |
+                                    <strong>2. Nro. Cuenta / IBAN</strong> |
+                                    <strong>3. Fecha (<code>YYYY-MM-DD</code>)</strong> |
+                                    <strong>4. Empresa / Titular</strong> |
+                                    <strong>5. Referencia</strong> |
+                                    <strong>6. Tipo (<code>CUENTA</code>)</strong> |
+                                    <strong>7. Debe</strong> |
+                                    <strong>8. Haber</strong>
+                                </p>
+                            </div>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <span id="badgePdfModeDetected" class="badge badge-status-active">
+                                    Motor PDF.js Listo
+                                </span>
+                                <button
+                                    type="button"
+                                    id="btnDownloadPdfAnalizadoCsvTop"
+                                    class="btn btn-sm btn-institutional-primary"
+                                    disabled
+                                    title="Se activa al analizar un PDF para descargar la tabla extraída en formato CSV"
+                                >
+                                    <i class="bi bi-filetype-csv me-1"></i>Descargar Tabla Analizada (CSV)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="pdfImportAlert" class="alert d-none py-2 small mb-2" role="alert"></div>
+
+                        <div class="row g-2 align-items-end mt-1">
+                            <div class="col-12 col-md-3">
+                                <label for="inputPdfMovimientos" class="form-label small fw-bold mb-1">
+                                    Archivo PDF de Estado de Cuenta
+                                </label>
+                                <input
+                                    type="file"
+                                    id="inputPdfMovimientos"
+                                    class="form-control form-control-sm"
+                                    accept=".pdf,application/pdf"
+                                />
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <label for="pdfMonedaDefault" class="form-label small fw-bold mb-1">
+                                    Moneda
+                                </label>
+                                <select id="pdfMonedaDefault" class="form-select form-select-sm">
+                                    <option value="VES">VES</option>
+                                    <option value="USD">USD</option>
+                                    <option value="EUR">EUR</option>
+                                    <option value="USDT">USDT</option>
+                                    <option value="BNB">BNB</option>
+                                    <option value="BTC">BTC</option>
+                                    <option value="YEN">YEN</option>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <label for="pdfDecimalSeparator" class="form-label small fw-bold mb-1">
+                                    Separador Decimal
+                                </label>
+                                <select id="pdfDecimalSeparator" class="form-select form-select-sm">
+                                    <option value="," selected>Coma (,) — 1.234,56</option>
+                                    <option value=".">Punto (.) — 1,234.56</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-3">
+                                <label for="pdfColumnModeSelect" class="form-label small fw-bold mb-1">
+                                    Estructura de Columnas de Monto
+                                </label>
+                                <select id="pdfColumnModeSelect" class="form-select form-select-sm">
+                                    <option value="auto">Automático (Coordenadas / Signo)</option>
+                                    <option value="dual">Columnas Separadas (Débito y Crédito)</option>
+                                    <option value="single">Columna Única (+ Haber / - Debe)</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-2">
+                                <button
+                                    type="button"
+                                    id="btnProcessPdfMovimientos"
+                                    class="btn btn-sm btn-institutional-blue w-100 py-2"
+                                >
+                                    <i class="bi bi-cpu-fill me-1"></i>1. Analizar PDF
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- VISTA PREVIA INTERACTIVA DE LAS TRANSACCIONES EXTRAÍDAS DEL PDF -->
+                        <div id="pdfPreviewSection" class="d-none mt-3 pt-3 border-top">
+                            <div class="row g-2 align-items-end mb-2 p-2 rounded bg-white border">
+                                <div class="col-12">
+                                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                        <span class="small fw-bold text-primary">
+                                            <i class="bi bi-sliders2 me-1"></i>Datos del Encabezado Detectados en el PDF (Editables para todas las filas):
+                                        </span>
+                                        <span id="pdfPreviewStatsBadge" class="badge badge-status-alert">
+                                            0 filas detectadas
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="col-12 col-md-3">
+                                    <label for="pdfDetectedBanco" class="form-label small fw-semibold mb-1">
+                                        1. Nombre del Banco (Encabezado)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="pdfDetectedBanco"
+                                        class="form-control form-control-sm"
+                                        placeholder="Nombre del banco..."
+                                    />
+                                </div>
+                                <div class="col-12 col-md-3">
+                                    <label for="pdfDetectedCuenta" class="form-label small fw-semibold mb-1">
+                                        2. Nro. de Cuenta / IBAN
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="pdfDetectedCuenta"
+                                        class="form-control form-control-sm"
+                                        placeholder="Número de cuenta o IBAN..."
+                                    />
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label for="pdfDetectedEmpresa" class="form-label small fw-semibold mb-1">
+                                        4. Empresa / Titular de la Cuenta
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="pdfDetectedEmpresa"
+                                        class="form-control form-control-sm"
+                                        placeholder="Nombre de la empresa o titular..."
+                                    />
+                                </div>
+                                <div class="col-12 col-md-2">
+                                    <button
+                                        type="button"
+                                        id="btnApplyPdfHeaderToRows"
+                                        class="btn btn-sm btn-institutional-white w-100"
+                                        title="Aplicar estos datos de encabezado a todas las filas previsualizadas"
+                                    >
+                                        <i class="bi bi-check2-all me-1"></i>Aplicar a Filas
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="table-viewport-container mb-2" style="max-height: 320px; overflow-y: auto;">
+                                <table class="table table-adaptive table-sm align-middle mb-0" id="pdfPreviewTable">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 13%;">1. Nombre del Banco</th>
+                                            <th style="width: 15%;">2. Nro. de Cuenta</th>
+                                            <th style="width: 11%;">3. Fecha (YYYY-MM-DD)</th>
+                                            <th style="width: 15%;">4. Empresa / Titular</th>
+                                            <th style="width: 12%;">5. Nro. Referencia</th>
+                                            <th style="width: 8%;">6. Tipo</th>
+                                            <th style="width: 10%;">7. Debe</th>
+                                            <th style="width: 10%;">8. Haber</th>
+                                            <th style="width: 6%;">Quitar</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="pdfPreviewTableBody"></tbody>
+                                </table>
+                            </div>
+
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                <div id="pdfPreviewTotalsText" class="small fw-bold text-dark">
+                                    Total Debe: 0,00 | Total Haber: 0,00
+                                </div>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        id="btnClearPdfPreview"
+                                        class="btn btn-sm btn-outline-secondary"
+                                    >
+                                        <i class="bi bi-x-circle me-1"></i>Descartar Vista Previa
+                                    </button>
+                                    <button
+                                        type="button"
+                                        id="btnDownloadPdfAnalizadoCsv"
+                                        class="btn btn-sm btn-institutional-primary"
+                                    >
+                                        <i class="bi bi-file-earmark-spreadsheet-fill me-1"></i>Descargar Tabla Analizada en CSV
+                                    </button>
+                                    <button
+                                        type="button"
+                                        id="btnSavePdfMovimientos"
+                                        class="btn btn-sm btn-institutional-accent px-3"
+                                    >
+                                        <i class="bi bi-cloud-check-fill me-1"></i>2. Guardar Movimientos del PDF en Supabase
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- FORMULARIO MANUAL DE INGRESO / EDICIÓN DE MOVIMIENTOS -->
                     <form id="formCrudMovimientos" class="row g-2 mb-3 p-3 rounded border bg-light">
                         <input type="hidden" id="movId" value="" />
@@ -1535,6 +1786,7 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
                                 Tipo (<code>tipo</code>)
                             </label>
                             <select id="movTipo" class="form-select form-select-sm">
+                                <option value="CUENTA">CUENTA</option>
                                 <option value="Crédito">Crédito</option>
                                 <option value="Débito">Débito</option>
                                 <option value="Transferencia">Transferencia</option>
@@ -1580,71 +1832,6 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
                             </button>
                         </div>
                     </form>
-
-                    <!-- TABLA PAGINADA, ORDENABLE Y FILTRABLE DENTRO DEL MODAL DE MOVIMIENTOS -->
-                    <div class="row g-2 align-items-center mb-2">
-                        <div class="col-12 col-md-7">
-                            <div class="input-group input-group-sm">
-                                <span class="input-group-text"><i class="bi bi-search"></i></span>
-                                <input
-                                    type="text"
-                                    id="filterModalMovimientos"
-                                    class="form-control"
-                                    placeholder="Filtrar por código, nombre de banco, nro de cuenta, empresa o referencia..."
-                                />
-                            </div>
-                        </div>
-                        <div class="col-12 col-md-5 d-flex justify-content-md-end align-items-center gap-2">
-                            <label class="small fw-semibold mb-0">Filas por página:</label>
-                            <select id="pageSizeModalMovimientos" class="form-select form-select-sm" style="width: 80px;">
-                                <option value="5" selected>5</option>
-                                <option value="10">10</option>
-                                <option value="20">20</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="table-viewport-container">
-                        <table class="table table-adaptive table-sm align-middle">
-                            <thead id="theadModalMovimientos">
-                                <tr>
-                                    <th style="width: 7%;" class="sortable-th" data-sort="id">
-                                        Código <span class="sort-indicator"></span>
-                                    </th>
-                                    <th style="width: 10%;" class="sortable-th" data-sort="fecha">
-                                        Fecha <span class="sort-indicator"></span>
-                                    </th>
-                                    <th style="width: 14%;" class="sortable-th" data-sort="banco_nombre">
-                                        Banco <span class="sort-indicator"></span>
-                                    </th>
-                                    <th style="width: 13%;" class="sortable-th" data-sort="cuenta_numero">
-                                        Cuenta <span class="sort-indicator"></span>
-                                    </th>
-                                    <th style="width: 12%;" class="sortable-th" data-sort="empresa_legible">
-                                        Empresa <span class="sort-indicator"></span>
-                                    </th>
-                                    <th style="width: 10%;" class="sortable-th" data-sort="referencia_legible">
-                                        Referencia <span class="sort-indicator"></span>
-                                    </th>
-                                    <th style="width: 12%;" class="sortable-th" data-sort="descripcion_legible">
-                                        Descripción <span class="sort-indicator"></span>
-                                    </th>
-                                    <th style="width: 7%;" class="sortable-th" data-sort="debe">
-                                        Debe <span class="sort-indicator"></span>
-                                    </th>
-                                    <th style="width: 7%;" class="sortable-th" data-sort="haber">
-                                        Haber <span class="sort-indicator"></span>
-                                    </th>
-                                    <th style="width: 8%;">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="modalMovimientosTableBody"></tbody>
-                        </table>
-                    </div>
-                    <div
-                        id="paginationModalMovimientos"
-                        class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2"
-                    ></div>
                 </div>
             </div>
         </div>
@@ -1655,6 +1842,12 @@ GRANT SELECT ON public.vista_resumen_saldos_movimientos TO anon, authenticated;<
         src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
         crossorigin="anonymous"
+    ></script>
+    <!-- PDF.js CDN para lectura estructurada de estados de cuenta bancarios en PDF -->
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"
     ></script>
     <!-- Lógica Principal ES6 Module -->
     <script type="module" src="./js/app.js"></script>

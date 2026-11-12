@@ -1,36 +1,42 @@
 /* ==========================================================================
    ARCHIVO: css/styles.css
-   DIRECTIVAS DE DISEÑO:
+   TEMA: BOOTSTRAP 5 BÁSICO / ESTÁNDAR
+   - Paleta oficial: Primary (#0d6efd), Success (#198754), Danger (#dc3545),
+     Warning (#ffc107), Info (#0dcaf0), Dark (#212529), Light (#f8f9fa).
    - Directiva 5: Ancho total (100% viewport), adaptación móvil y tablas
      ajustadas estrictamente al ancho disponible del dispositivo.
-   - Directiva 6: Panel lateral izquierdo de solo iconos que muestra las
-     opciones cada vez que el ratón se posa sobre los iconos (desplegable).
-   - Directiva 7 (Actualizada): Paleta de verdes oscuros, azules oscuros,
-     naranjas y blanco (reemplazando el amarillo por blanco).
+   - Directiva 6: Panel lateral izquierdo desplegable con hover sobre iconos.
    ========================================================================== */
 
 :root {
-    /* Verdes oscuros */
-    --bg-green-deep: #0b3d2e;
-    --bg-green-mid: #14532d;
-    --bg-green-surface: #1b6b3a;
+    /* Paleta Oficial Bootstrap 5 */
+    --bs-primary: #0d6efd;
+    --bs-primary-dark: #0b5ed7;
+    --bs-secondary: #6c757d;
+    --bs-success: #198754;
+    --bs-info: #0dcaf0;
+    --bs-warning: #ffc107;
+    --bs-danger: #dc3545;
+    --bs-light: #f8f9fa;
+    --bs-dark: #212529;
+    --bs-dark-border: #373b3e;
+    --bs-border-color: #dee2e6;
+    --bs-body-bg: #f8f9fa;
+    --bs-body-color: #212529;
 
-    /* Azules oscuros */
-    --bg-blue-deep: #0a192f;
-    --bg-blue-mid: #112240;
-    --bg-blue-accent: #1e3a5f;
-
-    /* Naranjas */
-    --accent-orange: #f97316;
-    --accent-orange-dark: #ea580c;
-
-    /* Blanco (en sustitución del amarillo) */
+    /* Mapeo de compatibilidad con variables del sistema */
+    --bg-green-deep: #198754;
+    --bg-green-mid: #0d6efd;
+    --bg-green-surface: #d1e7dd;
+    --bg-blue-deep: #212529;
+    --bg-blue-mid: #2b3035;
+    --bg-blue-accent: #0d6efd;
+    --accent-orange: #0d6efd;
+    --accent-orange-dark: #0b5ed7;
     --accent-white: #ffffff;
-    --accent-white-soft: #f1f5f9;
-
-    /* Textos y fondos */
+    --accent-white-soft: #f8f9fa;
     --text-light: #ffffff;
-    --text-muted-light: #cbd5e1;
+    --text-muted-light: #adb5bd;
 
     /* Dimensiones del Panel Lateral de Iconos */
     --sidebar-collapsed-width: 68px;
@@ -52,19 +58,19 @@ body {
     margin: 0;
     padding: 0;
     overflow-x: hidden;
-    background-color: #eef2f6;
-    color: var(--bg-blue-deep);
+    background-color: var(--bs-body-bg);
+    color: var(--bs-body-color);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 /* ==========================================================================
-   VISTA DE LOGIN (100% ANCHO Y ALTO DE PANTALLA)
+   VISTA DE LOGIN (ESTILO BOOTSTRAP BÁSICO)
    ========================================================================== */
 
 .login-viewport {
     width: 100%;
     min-height: 100vh;
-    background: linear-gradient(135deg, var(--bg-blue-deep) 0%, var(--bg-green-deep) 55%, var(--bg-blue-mid) 100%);
+    background: linear-gradient(135deg, #212529 0%, #0d6efd 100%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -74,17 +80,17 @@ body {
 .login-shell {
     width: 100%;
     max-width: 100%;
-    border-radius: 0.75rem;
+    border-radius: 0.5rem;
     overflow: hidden;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
-    border: 2px solid var(--accent-orange);
-    background-color: var(--accent-white);
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.25);
+    border: 1px solid #dee2e6;
+    background-color: #ffffff;
 }
 
 .login-banner-panel {
-    background: linear-gradient(160deg, var(--bg-green-deep) 0%, var(--bg-blue-deep) 100%);
-    color: var(--accent-white);
-    border-bottom: 3px solid var(--accent-orange);
+    background: linear-gradient(160deg, #0d6efd 0%, #0b5ed7 100%);
+    color: #ffffff;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
     padding: 2rem;
     display: flex;
     flex-direction: column;
@@ -94,28 +100,28 @@ body {
 @media (min-width: 992px) {
     .login-banner-panel {
         border-bottom: none;
-        border-right: 3px solid var(--accent-orange);
+        border-right: 1px solid rgba(255, 255, 255, 0.2);
     }
 }
 
 .login-form-panel {
     padding: 2rem 1.5rem;
-    background-color: var(--accent-white);
+    background-color: #ffffff;
 }
 
 .login-input-group .input-group-text {
-    background-color: var(--bg-blue-deep);
-    color: var(--accent-white);
-    border-color: var(--bg-blue-accent);
+    background-color: #f8f9fa;
+    color: #495057;
+    border-color: #ced4da;
 }
 
 .login-input-group .form-control:focus {
-    border-color: var(--accent-orange);
-    box-shadow: 0 0 0 0.2rem rgba(249, 115, 22, 0.25);
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
 }
 
 /* ==========================================================================
-   ESTRUCTURA GENERAL POST-LOGIN FULL-WIDTH (Directiva 5 & 6)
+   ESTRUCTURA GENERAL POST-LOGIN FULL-WIDTH
    ========================================================================== */
 
 .app-wrapper {
@@ -125,20 +131,20 @@ body {
     position: relative;
 }
 
-/* Panel Lateral Izquierdo de Solo Iconos Desplegable con Hover (Directiva 6) */
+/* Panel Lateral Izquierdo de Solo Iconos Desplegable (Bootstrap Dark) */
 .icon-sidebar {
     position: fixed;
     top: 0;
     left: 0;
     height: 100vh;
     width: var(--sidebar-collapsed-width);
-    background: linear-gradient(180deg, var(--bg-blue-deep) 0%, var(--bg-green-deep) 100%);
-    color: var(--accent-white);
+    background: #212529;
+    color: #ffffff;
     z-index: 1045;
     overflow-x: hidden;
     overflow-y: auto;
     transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease;
-    border-right: 3px solid var(--accent-orange);
+    border-right: 1px solid #373b3e;
     display: flex;
     flex-direction: column;
 }
@@ -147,7 +153,7 @@ body {
 .icon-sidebar:hover,
 .icon-sidebar.mobile-open {
     width: var(--sidebar-expanded-width);
-    box-shadow: 8px 0 28px rgba(10, 25, 47, 0.55);
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.35);
 }
 
 /* Cabecera del Panel Lateral */
@@ -156,11 +162,11 @@ body {
     align-items: center;
     height: var(--topbar-height);
     padding: 0 18px;
-    background-color: rgba(0, 0, 0, 0.28);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+    background-color: #1a1d20;
+    border-bottom: 1px solid #373b3e;
     white-space: nowrap;
     text-decoration: none;
-    color: var(--accent-white);
+    color: #ffffff;
     font-weight: 700;
     font-size: 1.05rem;
 }
@@ -168,7 +174,7 @@ body {
 .sidebar-brand .brand-icon {
     min-width: 32px;
     font-size: 1.45rem;
-    color: var(--accent-orange);
+    color: #0d6efd;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -188,7 +194,7 @@ body {
 /* Menú de Opciones del Panel */
 .sidebar-nav {
     list-style: none;
-    padding: 14px 0;
+    padding: 12px 0;
     margin: 0;
     flex: 1;
 }
@@ -201,30 +207,30 @@ body {
 .sidebar-link {
     display: flex;
     align-items: center;
-    min-height: 54px;
+    min-height: 50px;
     padding: 0 16px;
-    color: var(--accent-white);
+    color: rgba(255, 255, 255, 0.85);
     text-decoration: none;
     white-space: nowrap;
-    transition: background-color 0.2s ease, color 0.2s ease, border-left-color 0.2s ease;
+    transition: background-color 0.15s ease, color 0.15s ease, border-left-color 0.15s ease;
     border-left: 4px solid transparent;
     cursor: pointer;
 }
 
 .sidebar-link .nav-icon {
     min-width: 32px;
-    font-size: 1.35rem;
-    color: var(--accent-white);
+    font-size: 1.3rem;
+    color: rgba(255, 255, 255, 0.85);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: transform 0.2s ease, color 0.2s ease;
+    transition: transform 0.15s ease, color 0.15s ease;
 }
 
 .sidebar-link .nav-label {
     margin-left: 14px;
-    font-size: 0.92rem;
-    font-weight: 600;
+    font-size: 0.9rem;
+    font-weight: 500;
     opacity: 0;
     transform: translateX(-8px);
     transition: opacity 0.2s ease, transform 0.2s ease;
@@ -238,25 +244,25 @@ body {
 
 .sidebar-link:hover,
 .sidebar-link.active {
-    background-color: rgba(249, 115, 22, 0.25);
-    color: var(--accent-white);
-    border-left-color: var(--accent-orange);
+    background-color: #0d6efd;
+    color: #ffffff;
+    border-left-color: #ffffff;
 }
 
 .sidebar-link:hover .nav-icon,
 .sidebar-link.active .nav-icon {
-    color: var(--accent-orange);
-    transform: scale(1.12);
+    color: #ffffff;
+    transform: scale(1.1);
 }
 
 /* Pie del Panel Lateral */
 .sidebar-footer {
-    border-top: 1px solid rgba(255, 255, 255, 0.22);
-    background-color: rgba(10, 25, 47, 0.65);
+    border-top: 1px solid #373b3e;
+    background-color: #1a1d20;
 }
 
 /* ==========================================================================
-   ÁREA PRINCIPAL DE CONTENIDO (100% ANCHO DISPONIBLE)
+   ÁREA PRINCIPAL DE CONTENIDO
    ========================================================================== */
 
 .main-workspace {
@@ -272,9 +278,9 @@ body {
 .workspace-topbar {
     min-height: var(--topbar-height);
     width: 100%;
-    background: linear-gradient(90deg, var(--bg-green-deep) 0%, var(--bg-blue-mid) 100%);
-    color: var(--accent-white);
-    border-bottom: 3px solid var(--accent-orange);
+    background-color: #212529;
+    color: #ffffff;
+    border-bottom: 1px solid #373b3e;
     padding: 8px 16px;
     display: flex;
     flex-wrap: wrap;
@@ -283,33 +289,37 @@ body {
     gap: 8px;
 }
 
-/* Componentes con paleta verde oscuro, azul oscuro, naranja y blanco */
+/* ==========================================================================
+   COMPONENTES BOOTSTRAP (CARDS, MODALES, BOTONES, BADGES)
+   ========================================================================== */
+
 .card-institutional {
-    border: none;
-    border-top: 4px solid var(--bg-green-mid);
-    border-radius: 0.5rem;
-    box-shadow: 0 2px 10px rgba(10, 25, 47, 0.08);
+    border: 1px solid #dee2e6;
+    border-top: 3px solid #0d6efd;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.05);
     width: 100%;
-    background-color: var(--accent-white);
+    background-color: #ffffff;
 }
 
 .card-institutional .card-header {
-    background: linear-gradient(90deg, var(--bg-blue-deep) 0%, var(--bg-green-deep) 100%);
-    color: var(--accent-white);
-    border-bottom: 2px solid var(--accent-orange);
+    background-color: #f8f9fa;
+    color: #212529;
+    border-bottom: 1px solid #dee2e6;
     font-weight: 600;
 }
 
 .modal-institutional .modal-content {
-    border: 2px solid var(--accent-orange);
-    border-radius: 0.6rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
     overflow: hidden;
 }
 
 .modal-institutional .modal-header {
-    background: linear-gradient(90deg, var(--bg-blue-deep) 0%, var(--bg-green-deep) 100%);
-    color: var(--accent-white);
-    border-bottom: 2px solid var(--accent-orange);
+    background-color: #0d6efd;
+    color: #ffffff;
+    border-bottom: 1px solid #0b5ed7;
 }
 
 .modal-institutional .btn-close {
@@ -317,75 +327,78 @@ body {
 }
 
 .btn-institutional-primary {
-    background-color: var(--bg-green-mid);
-    border-color: var(--bg-green-deep);
-    color: var(--accent-white);
-    font-weight: 600;
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: #ffffff;
+    font-weight: 500;
 }
 
 .btn-institutional-primary:hover {
-    background-color: var(--bg-green-deep);
-    border-color: var(--accent-orange);
-    color: var(--accent-white);
+    background-color: #0b5ed7;
+    border-color: #0a58ca;
+    color: #ffffff;
 }
 
 .btn-institutional-blue {
-    background-color: var(--bg-blue-mid);
-    border-color: var(--bg-blue-deep);
-    color: var(--accent-white);
-    font-weight: 600;
+    background-color: #6c757d;
+    border-color: #6c757d;
+    color: #ffffff;
+    font-weight: 500;
 }
 
 .btn-institutional-blue:hover {
-    background-color: var(--bg-blue-deep);
-    border-color: var(--accent-orange);
-    color: var(--accent-white);
+    background-color: #5c636a;
+    border-color: #565e64;
+    color: #ffffff;
 }
 
 .btn-institutional-accent {
-    background-color: var(--accent-orange);
-    border-color: var(--accent-orange-dark);
-    color: var(--accent-white);
-    font-weight: 600;
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: #ffffff;
+    font-weight: 500;
 }
 
 .btn-institutional-accent:hover {
-    background-color: var(--accent-orange-dark);
-    color: var(--accent-white);
+    background-color: #0b5ed7;
+    border-color: #0a58ca;
+    color: #ffffff;
 }
 
 .btn-institutional-white {
-    background-color: var(--accent-white);
-    border: 1px solid var(--bg-blue-accent);
-    color: var(--bg-blue-deep);
-    font-weight: 700;
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    color: #212529;
+    font-weight: 500;
 }
 
 .btn-institutional-white:hover {
-    background-color: var(--accent-orange);
-    border-color: var(--accent-orange-dark);
-    color: var(--accent-white);
+    background-color: #f8f9fa;
+    border-color: #ced4da;
+    color: #0d6efd;
 }
 
 .badge-status-active {
-    background-color: var(--bg-green-mid);
-    color: var(--accent-white);
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    background-color: #198754;
+    color: #ffffff;
+    font-weight: 500;
 }
 
 .badge-status-alert {
-    background-color: var(--accent-orange);
-    color: var(--accent-white);
+    background-color: #0d6efd;
+    color: #ffffff;
+    font-weight: 500;
 }
 
 .icon-box-institutional {
-    background-color: var(--bg-blue-deep);
-    color: var(--accent-white);
-    border-bottom: 3px solid var(--accent-orange);
+    background-color: #cfe2ff;
+    color: #0d6efd;
+    border: 1px solid #b6d4fe;
+    border-radius: 0.375rem;
 }
 
 /* ==========================================================================
-   TABLAS ADAPTATIVAS, ORDENABLES Y PAGINADAS (Directiva 5)
+   TABLAS ADAPTATIVAS, ORDENABLES Y PAGINADAS
    ========================================================================== */
 
 .table-viewport-container {
@@ -403,10 +416,11 @@ body {
 }
 
 .table-adaptive thead th {
-    background-color: var(--bg-green-deep);
-    color: var(--accent-white);
-    border-bottom: 2px solid var(--accent-orange);
-    font-size: 0.84rem;
+    background-color: #212529;
+    color: #ffffff;
+    border-bottom: 2px solid #373b3e;
+    font-size: 0.82rem;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.03em;
     padding: 10px 8px;
@@ -421,48 +435,48 @@ body {
 }
 
 .table-adaptive thead th.sortable-th:hover {
-    background-color: var(--bg-blue-mid);
-    color: var(--accent-orange);
+    background-color: #0d6efd;
+    color: #ffffff;
 }
 
 .table-adaptive thead th.sortable-th .sort-indicator {
     margin-left: 4px;
     font-size: 0.8rem;
-    color: var(--accent-orange);
+    color: #0dcaf0;
 }
 
 .table-adaptive tbody td {
-    padding: 10px 8px;
+    padding: 9px 8px;
     vertical-align: middle;
     word-wrap: break-word;
     overflow-wrap: anywhere;
-    border-bottom: 1px solid #cbd5e1;
+    border-bottom: 1px solid #dee2e6;
 }
 
 .table-adaptive tbody tr:hover {
-    background-color: rgba(20, 83, 45, 0.06);
+    background-color: rgba(13, 110, 253, 0.04);
 }
 
-/* Paginación con colores institucionales */
+/* Paginación estándar Bootstrap */
 .pagination-institutional .page-link {
-    color: var(--bg-blue-deep);
-    border-color: #cbd5e1;
-    font-weight: 600;
+    color: #0d6efd;
+    border-color: #dee2e6;
+    font-weight: 500;
 }
 
 .pagination-institutional .page-item.active .page-link {
-    background-color: var(--bg-green-deep);
-    border-color: var(--accent-orange);
-    color: var(--accent-white);
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: #ffffff;
 }
 
 .pagination-institutional .page-link:hover {
-    background-color: var(--accent-orange);
-    border-color: var(--accent-orange-dark);
-    color: var(--accent-white);
+    background-color: #e9ecef;
+    border-color: #dee2e6;
+    color: #0a58ca;
 }
 
-/* Adaptación Móvil (< 768px): Tablas contenidas 100% en el ancho del dispositivo */
+/* Adaptación Móvil (< 768px) */
 @media (max-width: 767.98px) {
     .icon-sidebar {
         width: 0;
@@ -471,7 +485,7 @@ body {
 
     .icon-sidebar.mobile-open {
         width: var(--sidebar-expanded-width);
-        border-right: 3px solid var(--accent-orange);
+        border-right: 1px solid #373b3e;
     }
 
     .main-workspace {
@@ -496,11 +510,11 @@ body {
     }
 
     .table-adaptive tbody tr {
-        border: 1px solid var(--bg-blue-accent);
-        border-left: 4px solid var(--accent-orange);
-        border-radius: 0.4rem;
+        border: 1px solid #dee2e6;
+        border-left: 4px solid #0d6efd;
+        border-radius: 0.375rem;
         margin-bottom: 0.75rem;
-        background-color: var(--accent-white);
+        background-color: #ffffff;
         padding: 4px 0;
     }
 
@@ -510,7 +524,7 @@ body {
         align-items: center;
         text-align: right;
         padding: 8px 12px;
-        border-bottom: 1px dashed #e2e8f0;
+        border-bottom: 1px dashed #dee2e6;
         font-size: 0.9rem;
     }
 
@@ -520,9 +534,9 @@ body {
 
     .table-adaptive tbody td::before {
         content: attr(data-label);
-        font-weight: 700;
+        font-weight: 600;
         text-align: left;
-        color: var(--bg-green-deep);
+        color: #212529;
         padding-right: 10px;
         flex-shrink: 0;
     }
@@ -533,12 +547,13 @@ body {
    ========================================================================== */
 
 .pie-currency-card {
-    background-color: var(--accent-white);
-    border: 1px solid #cbd5e1;
-    border-top: 3px solid var(--bg-green-deep);
-    border-radius: 0.45rem;
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    border-top: 3px solid #0d6efd;
+    border-radius: 0.375rem;
     padding: 0.75rem 0.9rem;
     height: 100%;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.05);
 }
 
 .pie-svg-wrapper {
@@ -564,5 +579,5 @@ body {
     height: 12px;
     border-radius: 3px;
     flex-shrink: 0;
-    border: 1px solid rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(0, 0, 0, 0.15);
 }

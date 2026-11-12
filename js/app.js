@@ -323,7 +323,7 @@ async function refreshAllDatabaseData() {
         ...m,
         banco_nombre: getBancoNameById(m.banco_id),
         cuenta_numero: getCuentaNameById(m.cuenta_id),
-        flujo_neto: Number(m.debe || 0) - Number(m.haber || 0)
+        flujo_neto: Number(m.haber || 0) - Number(m.debe || 0) // Crédito menos Débito (banco)
     }));
 
     // Enriquecer o sincronizar la vista `public.vista_resumen_saldos_movimientos`
@@ -506,7 +506,7 @@ async function loadVistaResumenSaldosFromDb() {
         total_cuentas_movidas: Number(row.total_cuentas_movidas || 0),
         total_debe: Number(row.total_debe || 0),
         total_haber: Number(row.total_haber || 0),
-        saldo_disponible: Number(row.saldo_disponible || 0),
+        saldo_disponible: Number(row.total_haber || 0) - Number(row.total_debe || 0), // Crédito menos Débito (banco)
         primera_fecha: row.primera_fecha || row.fecha || null,
         ultima_fecha: row.ultima_fecha || row.fecha || null
     }));
@@ -566,7 +566,7 @@ function buildVistaResumenFromMovimientos(movimientosSource) {
         }
         item.total_debe += debeVal;
         item.total_haber += haberVal;
-        item.saldo_disponible += debeVal - haberVal;
+        item.saldo_disponible += haberVal - debeVal; // Crédito menos Débito (banco)
     });
 
     const sortedEntries = [...groups.values()].sort((a, b) => {
@@ -1019,7 +1019,7 @@ function renderMainSaldosTable() {
         const haberFmt = formatCurrencyAmount(v.total_haber, mon);
         const saldoVal = Number(v.saldo_disponible || 0);
         const saldoFmt = formatCurrencyAmount(saldoVal, mon);
-        const saldoColor = saldoVal >= 0 ? 'var(--bg-green-deep)' : 'var(--accent-orange-dark)';
+        const saldoColor = saldoVal >= 0 ? '#198754' : '#dc3545';
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -1027,8 +1027,8 @@ function renderMainSaldosTable() {
             <td data-label="Banco" class="fw-semibold">${v.banco_nombre}</td>
             <td data-label="Moneda"><span class="badge badge-status-active">${mon}</span></td>
             <td data-label="Movs" class="fw-semibold">${v.total_movimientos}</td>
-            <td data-label="Total Debe" class="fw-bold" style="color: var(--bg-green-deep);">${debeFmt}</td>
-            <td data-label="Total Haber" class="fw-bold" style="color: var(--accent-orange-dark);">${haberFmt}</td>
+            <td data-label="Total Debe" class="fw-bold text-danger">${debeFmt}</td>
+            <td data-label="Total Haber" class="fw-bold text-success">${haberFmt}</td>
             <td data-label="Saldo Disponible" class="fw-bold" style="color: ${saldoColor};">${saldoVal >= 0 ? '+' : ''}${saldoFmt} ${mon}</td>
         `;
         saldosBody.appendChild(tr);
@@ -1680,6 +1680,1704 @@ async function importPlantillaCsvToMovimientos() {
     }
 }
 
+// ============================================================================
+// PROCESAMIENTO E IMPORTACIÓN DE ESTADOS DE CUENTA BANCARIOS DESDE PDF (PDF.js)
+// ============================================================================
+
+const PDFJS_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const KNOWN_BANK_NAMES = [
+    'Banesco Banco Universal',
+    'Banesco Panamá',
+    'Banesco',
+    'Banco Mercantil',
+    'Mercantil Banco Universal',
+    'Mercantil Panamá',
+    'Mercantil',
+    'BBVA Provincial',
+    'Banco Provincial',
+    'Provincial',
+    'Banco de Venezuela',
+    'BDV',
+    'Banco Nacional de Crédito',
+    'BNC',
+    'Bancamiga Banco Universal',
+    'Bancamiga',
+    'Banplus Banco Universal',
+    'Banplus',
+    'Bancaribe',
+    'Banco del Caribe',
+    'Banco Exterior',
+    'Exterior',
+    'Venezolano de Crédito',
+    'Banco Fondo Común',
+    'BFC',
+    'Banco Plaza',
+    'Banco Activo',
+    'Banco Caroní',
+    'Banco Sofitasa',
+    'Banco del Tesoro',
+    'Banco Del Sur',
+    'Banfanb',
+    '100% Banco',
+    'Mi Banco',
+    'Bangente',
+    'Bank of America',
+    'Wells Fargo',
+    'JPMorgan Chase',
+    'Chase Bank',
+    'Citibank',
+    'Facebank',
+    'Towerbank',
+    'Binance'
+];
+
+const SPANISH_MONTHS_MAP = {
+    ENE: '01', ENERO: '01', JAN: '01',
+    FEB: '02', FEBRERO: '02',
+    MAR: '03', MARZO: '03',
+    ABR: '04', ABRIL: '04', APR: '04',
+    MAY: '05', MAYO: '05',
+    JUN: '06', JUNIO: '06',
+    JUL: '07', JULIO: '07',
+    AGO: '08', AGOSTO: '08', AUG: '08',
+    SEP: '09', SET: '09', SEPT: '09', SEPTIEMBRE: '09',
+    OCT: '10', OCTUBRE: '10',
+    NOV: '11', NOVIEMBRE: '11',
+    DIC: '12', DICIEMBRE: '12', DEC: '12'
+};
+
+// Estado en memoria de las filas previsualizadas desde el PDF
+let statePdfPreviewRows = [];
+
+function showPdfImportAlert(message, type = 'info') {
+    const alertEl = document.getElementById('pdfImportAlert');
+    if (!alertEl) return;
+    alertEl.className = `alert alert-${type} py-2 small mb-2`;
+    alertEl.innerHTML = message;
+    alertEl.classList.remove('d-none');
+}
+
+function hidePdfImportAlert() {
+    const alertEl = document.getElementById('pdfImportAlert');
+    if (alertEl) alertEl.classList.add('d-none');
+}
+
+/**
+ * Normaliza una cadena de fecha extraída de un PDF bancario al formato estricto `YYYY-MM-DD`.
+ * Soporta `DD/MM/YYYY`, `DD-MM-YYYY`, `DD.MM.YYYY`, `DD/MM/YY`, `YYYY-MM-DD`, `DD-MMM-YYYY` y `DD/MM`.
+ * @param {string} rawDateStr
+ * @param {number} [fallbackYear]
+ * @returns {{ valid: boolean, isoDate?: string }}
+ */
+function normalizePdfDateToIso(rawDateStr, fallbackYear = new Date().getFullYear()) {
+    const clean = String(rawDateStr || '').trim();
+    if (!clean) return { valid: false };
+
+    // 1. Formato ISO YYYY-MM-DD o YYYY/MM/DD
+    let m = /^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/.exec(clean);
+    if (m) {
+        const y = parseInt(m[1], 10);
+        const mo = parseInt(m[2], 10);
+        const d = parseInt(m[3], 10);
+        if (y >= 1990 && y <= 2100 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+            return {
+                valid: true,
+                isoDate: `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+            };
+        }
+    }
+
+    // 2. Formato DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY o DD/MM/YY
+    m = /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/.exec(clean);
+    if (m) {
+        const d = parseInt(m[1], 10);
+        const mo = parseInt(m[2], 10);
+        let y = parseInt(m[3], 10);
+        if (y < 100) {
+            y += y >= 70 ? 1900 : 2000;
+        }
+        if (y >= 1990 && y <= 2100 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+            return {
+                valid: true,
+                isoDate: `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+            };
+        }
+    }
+
+    // 3. Formato DD-MMM-YYYY o DD MMM YYYY (ej. 15 ENE 2026 / 15-ENE-26)
+    m = /^(\d{1,2})[\s\-\/]([A-Za-zÁÉÍÓÚáéíóú]{3,10})[\s\-\/](\d{2,4})$/.exec(clean);
+    if (m) {
+        const d = parseInt(m[1], 10);
+        const monKey = m[2].toUpperCase();
+        const moStr = SPANISH_MONTHS_MAP[monKey] || SPANISH_MONTHS_MAP[monKey.slice(0, 3)];
+        let y = parseInt(m[3], 10);
+        if (y < 100) y += 2000;
+        if (moStr && d >= 1 && d <= 31 && y >= 1990 && y <= 2100) {
+            return {
+                valid: true,
+                isoDate: `${y}-${moStr}-${String(d).padStart(2, '0')}`
+            };
+        }
+    }
+
+    // 4. Formato corto DD/MM, DD-MM o DD.MM (usando el año detectado en el estado de cuenta)
+    m = /^(\d{1,2})[\/\-\.](\d{1,2})$/.exec(clean);
+    if (m) {
+        const d = parseInt(m[1], 10);
+        const mo = parseInt(m[2], 10);
+        if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+            return {
+                valid: true,
+                isoDate: `${fallbackYear}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+            };
+        }
+    }
+
+    return { valid: false };
+}
+
+/**
+ * Normaliza signos menos Unicode y espacios especiales provenientes de fuentes PDF.
+ * @param {string} str
+ * @returns {string}
+ */
+function normalizePdfTextFragment(str) {
+    return String(str || '')
+        .replace(/[\u00A0\u2007\u202F]/g, ' ')
+        .replace(/[\u200B-\u200D\uFEFF]/g, '')
+        .replace(/[\u2212\u2013\u2014\uFE63\uFF0D]/g, '-');
+}
+
+/**
+ * Extrae las líneas de texto ordenadas espacialmente (coordenadas Y descendente y X ascendente)
+ * de todas las páginas del archivo PDF usando PDF.js, uniendo fragmentos numéricos divididos por kerning
+ * y separando tokens compuestos con coordenadas X proporcionales.
+ * @param {ArrayBuffer} arrayBuffer
+ * @returns {Promise<{ lines: Array<{ page: number, y: number, text: string, tokens: Array<{ text: string, x: number, y: number, width: number, xEnd: number }> }>, numPages: number }>}
+ */
+async function extractStructuredLinesFromPdf(arrayBuffer) {
+    const pdfjsLib = window.pdfjsLib;
+    if (!pdfjsLib) {
+        throw new Error(
+            'La librería PDF.js no está disponible. Verifique su conexión a internet y recargue la página.'
+        );
+    }
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN;
+
+    // Validar firma mágica %PDF- para descartar archivos corruptos o que no sean PDF reales
+    const headerBytes = new Uint8Array(arrayBuffer.slice(0, 8));
+    const headerSignature = String.fromCharCode(...headerBytes);
+    if (!headerSignature.includes('%PDF-')) {
+        throw new Error(
+            'El archivo seleccionado está corrupto o no posee una cabecera válida de documento PDF (%PDF-).'
+        );
+    }
+
+    let pdfDoc;
+    try {
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        pdfDoc = await loadingTask.promise;
+    } catch (err) {
+        if (err?.name === 'PasswordException') {
+            throw new Error(
+                'El archivo PDF está protegido con contraseña. Desbloquee el estado de cuenta antes de importarlo.'
+            );
+        }
+        throw new Error(`No se pudo decodificar el archivo PDF (documento dañando o ilegible): ${err.message}`);
+    }
+
+    const structuredLines = [];
+    const Y_TOLERANCE = 4.2;
+
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        const pageBuckets = [];
+
+        for (const item of textContent.items) {
+            const rawStr = normalizePdfTextFragment(item.str).trim();
+            if (!rawStr) continue;
+
+            const x = Number(item.transform?.[4] || 0);
+            const y = Number(item.transform?.[5] || 0);
+            const width = Math.max(Number(item.width || 0), rawStr.length * 4.2);
+
+            let targetLine = pageBuckets.find((b) => Math.abs(b.y - y) <= Y_TOLERANCE);
+            if (!targetLine) {
+                targetLine = { page: pageNum, y, tokens: [] };
+                pageBuckets.push(targetLine);
+            }
+            targetLine.tokens.push({
+                text: rawStr,
+                x,
+                y,
+                width,
+                xEnd: x + width
+            });
+        }
+
+        // Ordenar de arriba hacia abajo (Y mayor a menor en coordenadas PDF)
+        pageBuckets.sort((a, b) => b.y - a.y);
+
+        for (const bucket of pageBuckets) {
+            bucket.tokens.sort((a, b) => a.x - b.x);
+
+            // 1. Unir fragmentos adyacentes que PDF.js haya dividido por kerning (ej. "1" + ".05" o "1." + "05" o "-" + "1.05")
+            const mergedTokens = [];
+            for (const tok of bucket.tokens) {
+                if (mergedTokens.length === 0) {
+                    mergedTokens.push({ ...tok });
+                    continue;
+                }
+                const prev = mergedTokens[mergedTokens.length - 1];
+                const gap = tok.x - prev.xEnd;
+
+                const isSplitNumberOrDate =
+                    gap >= -3.5 &&
+                    gap <= 3.8 &&
+                    ((/[\d.,\/\-+($]$/.test(prev.text) && /^[\d.,\/\-+)%]$/.test(tok.text[0])) ||
+                        (/^[+\-(]$/.test(prev.text) && /^\d/.test(tok.text)) ||
+                        (/\d$/.test(prev.text) && /^(?:[.,]\d+|\)|-|DB|DR|CR)$/i.test(tok.text)) ||
+                        (/^\d+[.,]$/.test(prev.text) && /^\d+$/.test(tok.text)));
+
+                if (isSplitNumberOrDate) {
+                    prev.text = `${prev.text}${tok.text}`;
+                    prev.xEnd = Math.max(prev.xEnd, tok.xEnd);
+                    prev.width = prev.xEnd - prev.x;
+                } else {
+                    mergedTokens.push({ ...tok });
+                }
+            }
+
+            // 2. Si un token individual contiene múltiples fragmentos separados por espacios (ej. "COMISION IGTF 1.05" o "1.05 1,250.00"),
+            // desglosar en sub-tokens calculando la coordenada X y ancho proporcional de cada fragmento.
+            const normalizedTokens = [];
+            for (const tok of mergedTokens) {
+                if (/\s/.test(tok.text) && /\d[.,]\d/.test(tok.text)) {
+                    const totalLen = Math.max(tok.text.length, 1);
+                    const partRegex = /\S+/g;
+                    let partMatch;
+                    while ((partMatch = partRegex.exec(tok.text)) !== null) {
+                        const partStr = partMatch[0];
+                        const startRatio = partMatch.index / totalLen;
+                        const lenRatio = partStr.length / totalLen;
+                        const subX = tok.x + startRatio * tok.width;
+                        const subW = Math.max(lenRatio * tok.width, partStr.length * 4.0);
+                        normalizedTokens.push({
+                            text: partStr,
+                            x: subX,
+                            y: tok.y,
+                            width: subW,
+                            xEnd: subX + subW
+                        });
+                    }
+                } else {
+                    normalizedTokens.push(tok);
+                }
+            }
+
+            const joinedText = normalizedTokens.map((t) => t.text).join(' ').replace(/\s+/g, ' ').trim();
+            if (joinedText) {
+                structuredLines.push({
+                    page: pageNum,
+                    y: bucket.y,
+                    text: joinedText,
+                    tokens: normalizedTokens
+                });
+            }
+        }
+    }
+
+    return { lines: structuredLines, numPages: pdfDoc.numPages };
+}
+
+/**
+ * Analiza el encabezado del estado de cuenta PDF para extraer:
+ * 1. Nombre del banco
+ * 2. Nro de cuenta bancaria (o IBAN)
+ * 4. Nombre de la empresa o titular de la cuenta
+ * + Año de referencia y moneda si están presentes.
+ * @param {Array<{ page: number, y: number, text: string }>} lines
+ */
+function extractPdfHeaderMetadata(lines) {
+    const headerLines = lines.slice(0, 45);
+    const fullHeaderText = headerLines.map((l) => l.text).join('\n');
+
+    // 1. Detectar Nombre del Banco
+    let detectedBanco = '';
+    for (const b of stateBancos) {
+        const bName = (b.nombre_legible || '').trim();
+        if (bName.length >= 3 && new RegExp(`\\b${bName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(fullHeaderText)) {
+            detectedBanco = bName;
+            break;
+        }
+    }
+    if (!detectedBanco) {
+        for (const candidate of KNOWN_BANK_NAMES) {
+            if (new RegExp(`\\b${candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(fullHeaderText)) {
+                detectedBanco = candidate;
+                break;
+            }
+        }
+    }
+    if (!detectedBanco) {
+        const bankLabelMatch = /(?:banco|bank|instituci[oó]n\s*financiera|entidad\s*bancaria)[:\s]+([A-Za-zÁÉÍÓÚÑáéíóúñ0-9\s.,&-]{3,50})/i.exec(
+            fullHeaderText
+        );
+        if (bankLabelMatch) {
+            detectedBanco = bankLabelMatch[1].trim();
+        }
+    }
+    if (!detectedBanco && headerLines.length > 0) {
+        const firstClean = headerLines.find(
+            (l) =>
+                l.text.length >= 4 &&
+                l.text.length <= 55 &&
+                !/estado\s+de\s+cuenta|p[aá]gina|fecha|desde|hasta|rif|nit/i.test(l.text)
+        );
+        detectedBanco = firstClean ? firstClean.text : stateBancos[0]?.nombre_legible || 'Banco Detectado PDF';
+    }
+
+    // 2. Detectar Número de Cuenta Bancaria o IBAN
+    let detectedCuenta = '';
+    const digitsOnlyHeader = fullHeaderText.replace(/[-\s]/g, '');
+    for (const c of stateCuentas) {
+        const cNum = (c.cuenta_legible || '').trim();
+        const cDigits = cNum.replace(/[-\s]/g, '');
+        if (cDigits.length >= 8 && digitsOnlyHeader.includes(cDigits)) {
+            detectedCuenta = cNum;
+            break;
+        }
+    }
+    if (!detectedCuenta) {
+        // Patrón de 20 dígitos bancarios (Venezuela) con o sin guiones/espacios
+        const vzlaAccMatch = /\b(\d{4}[-\s]?\d{4}[-\s]?\d{2}[-\s]?\d{10}|\d{20})\b/.exec(fullHeaderText);
+        if (vzlaAccMatch) {
+            detectedCuenta = vzlaAccMatch[1].replace(/\s+/g, '');
+        }
+    }
+    if (!detectedCuenta) {
+        // Patrón IBAN internacional
+        const ibanMatch = /\b([A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}[A-Z0-9]{0,16})\b/.exec(fullHeaderText);
+        if (ibanMatch) {
+            detectedCuenta = ibanMatch[1];
+        }
+    }
+    if (!detectedCuenta) {
+        // Etiqueta explícita de Cuenta / Account
+        const accLabelMatch = /(?:nro\.?\s*de\s*cuenta|n[uú]mero\s*de\s*cuenta|cuenta\s*(?:corriente|ahorro|nro|n[uú]mero|#)?|cta\.?\s*(?:nro|#)?|account\s*(?:number|no|#)?|iban)[:\s#]*([0-9A-Z][0-9A-Z\-*]{5,28}[0-9])/i.exec(
+            fullHeaderText
+        );
+        if (accLabelMatch) {
+            detectedCuenta = accLabelMatch[1].trim();
+        }
+    }
+
+    // 4. Detectar Nombre de la Empresa o Titular de la Cuenta
+    let detectedEmpresa = '';
+    const holderLabelMatch = /(?:titular|cliente|nombre\s*del\s*cliente|empresa|raz[oó]n\s*social|nombre\s*o\s*raz[oó]n\s*social|beneficiario|account\s*holder)[:\s]+([^\n\r|]{3,75})/i.exec(
+        fullHeaderText
+    );
+    if (holderLabelMatch) {
+        detectedEmpresa = holderLabelMatch[1]
+            .replace(/\b(?:rif|nit|ci|c\.i\.|cuenta|cta|fecha|moneda)\b.*$/i, '')
+            .trim();
+    }
+    if (!detectedEmpresa) {
+        for (const l of headerLines) {
+            const corpMatch = /\b([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9\s.,&-]{2,60}\s+(?:C\.?A\.?|S\.?A\.?|S\.?R\.?L\.?|R\.?L\.?|LLC|INC\.?|CORP\.?|GMBH))\b/i.exec(
+                l.text
+            );
+            if (corpMatch && !/banco\s+universal/i.test(corpMatch[1])) {
+                detectedEmpresa = corpMatch[1].trim();
+                break;
+            }
+        }
+    }
+    if (!detectedEmpresa) {
+        detectedEmpresa = 'Titular Estado de Cuenta';
+    }
+
+    // Año de referencia para fechas cortas DD/MM
+    let detectedYear = new Date().getFullYear();
+    const yearMatch = /\b(20\d{2})\b/.exec(fullHeaderText);
+    if (yearMatch) {
+        detectedYear = parseInt(yearMatch[1], 10);
+    }
+
+    // Moneda detectada en el encabezado
+    let detectedMoneda = '';
+    for (const mon of SUPPORTED_CURRENCIES) {
+        if (new RegExp(`\\b${mon}\\b`, 'i').test(fullHeaderText)) {
+            detectedMoneda = mon;
+            break;
+        }
+    }
+    if (!detectedMoneda && /\b(?:bol[ií]vares|bs\.?s?|bs\.?d?)\b/i.test(fullHeaderText)) {
+        detectedMoneda = 'VES';
+    }
+
+    return {
+        banco: detectedBanco,
+        cuenta: detectedCuenta || 'SIN-CUENTA-DETECTADA',
+        empresa: detectedEmpresa,
+        year: detectedYear,
+        moneda: detectedMoneda
+    };
+}
+
+/**
+ * Evalúa si un token o fragmento de texto representa un importe monetario utilizando
+ * el separador decimal configurado (`,` o `.`), con respaldo automático para importes
+ * inequívocos de 2 decimales (ej. `1.05` o `1,05`), devolviendo su valor numérico con signo.
+ * @param {string} rawToken
+ * @param {string} [decimalSeparator=','] Carácter separador decimal (',' o '.')
+ * @returns {{ isAmount: boolean, signedValue: number, absValue: number, hasExplicitNegative: boolean, hasExplicitPositive: boolean }}
+ */
+function parsePdfMonetaryToken(rawToken, decimalSeparator = ',') {
+    const str = normalizePdfTextFragment(rawToken).trim();
+    if (!str) {
+        return { isAmount: false, signedValue: 0, absValue: 0, hasExplicitNegative: false, hasExplicitPositive: false };
+    }
+
+    // Descartar fechas (ej. 10.05.2026, 10/05/2026, 2026-05-10) o porcentajes (16.00%)
+    if (
+        /%$/.test(str) ||
+        /^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str) ||
+        /^\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}$/.test(str)
+    ) {
+        return { isAmount: false, signedValue: 0, absValue: 0, hasExplicitNegative: false, hasExplicitPositive: false };
+    }
+
+    const primaryDec = decimalSeparator === '.' ? '.' : ',';
+    const primaryThou = primaryDec === ',' ? '.' : ',';
+
+    const tryParseWithSep = (decChar, thouChar, strictTwoDecimalsOnly = false) => {
+        const escDec = decChar === '.' ? '\\.' : ',';
+        const escThou = thouChar === '.' ? '\\.' : ',';
+        const decDigitsQuantifier = strictTwoDecimalsOnly ? '{2}' : '{1,4}';
+
+        const pattern = new RegExp(
+            `^([+\\-(]?\\s*)(?:(?:Bs\\.?S?|Bs\\.?D?|USD|EUR|VES|USDT|BNB|BTC|YEN|US\\$|\\$|€)\\s*)?([+\\-]?\\s*)(\\d{1,3}(?:${escThou}\\d{3})+|\\d+)${escDec}(\\d${decDigitsQuantifier})(\\s*[)\\-*]?\\s*(?:DB|DR|CR|D|C|CARGO|ABONO|DEBITO|DÉBITO|CREDITO|CRÉDITO|ND|NC)?)$`,
+            'i'
+        );
+
+        const match = pattern.exec(str);
+        if (!match) return null;
+
+        const prefix1 = match[1] || '';
+        const prefix2 = match[2] || '';
+        const intPart = match[3] || '0';
+        const decPart = match[4] || '00';
+        const suffix = (match[5] || '').toUpperCase();
+
+        const cleanInt = intPart.split(thouChar).join('');
+        const cleanDigits = `${cleanInt}.${decPart}`;
+        const absValue = parseFloat(cleanDigits);
+        if (Number.isNaN(absValue)) return null;
+
+        const combinedPrefix = `${prefix1}${prefix2}`;
+        const hasExplicitNegative =
+            combinedPrefix.includes('-') ||
+            (combinedPrefix.includes('(') && suffix.includes(')')) ||
+            suffix.includes('-') ||
+            /\b(?:DB|DR|D|CARGO|DEBITO|DÉBITO|ND)\b/.test(suffix);
+
+        const hasExplicitPositive =
+            combinedPrefix.includes('+') ||
+            /\b(?:CR|C|ABONO|CREDITO|CRÉDITO|NC)\b/.test(suffix);
+
+        const signedValue = hasExplicitNegative ? -absValue : absValue;
+
+        return {
+            isAmount: true,
+            signedValue,
+            absValue,
+            hasExplicitNegative,
+            hasExplicitPositive
+        };
+    };
+
+    // 1. Intentar primero con el separador decimal configurado por el usuario
+    const primaryResult = tryParseWithSep(primaryDec, primaryThou, false);
+    if (primaryResult) {
+        return primaryResult;
+    }
+
+    // 2. Respaldo para importes monetarios inequívocos con exactamente 2 decimales en el separador opuesto
+    // (ej. "1.05" o "1,250.00" cuando el selector está en ',', ya que 2 dígitos tras el separador jamás pueden ser miles)
+    const fallbackResult = tryParseWithSep(primaryThou, primaryDec, true);
+    if (fallbackResult) {
+        return fallbackResult;
+    }
+
+    return { isAmount: false, signedValue: 0, absValue: 0, hasExplicitNegative: false, hasExplicitPositive: false };
+}
+
+/**
+ * Extrae todos los importes monetarios presentes en una línea del PDF conservando sus coordenadas
+ * horizontales (`x`, `width`, `xCenter`, `xEnd`) para distinguir con precisión columnas alineadas a la derecha.
+ * @param {{ text: string, tokens: Array<{ text: string, x: number, width?: number, xEnd?: number }> }} line
+ * @param {string} [decimalSeparator=',']
+ * @param {number} [minXAfterDate=-Infinity] Coordenada X mínima posterior a la fecha de la fila
+ * @returns {Array<{ signedValue: number, absValue: number, x: number, width: number, xCenter: number, xEnd: number, raw: string, hasExplicitNegative: boolean, hasExplicitPositive: boolean }>}
+ */
+function extractAmountsFromPdfLine(line, decimalSeparator = ',', minXAfterDate = -Infinity) {
+    const results = [];
+    const decChar = decimalSeparator === '.' ? '.' : ',';
+    const tokens = Array.isArray(line?.tokens) ? line.tokens : [];
+
+    // 1. Evaluar token por token conservando coordenadas X exactas de inicio y fin (vital para montos cortos como 1.05)
+    for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        if (tok.x < minXAfterDate) continue;
+
+        let candidateText = normalizePdfTextFragment(tok.text).trim();
+        let startX = tok.x;
+        let endX = tok.xEnd ?? tok.x + Math.max(Number(tok.width || 0), candidateText.length * 4.5);
+
+        // Si el signo '-' o '+' o símbolo de moneda viene en el token inmediatamente anterior/siguiente, unirlo
+        if (
+            (/^[+\-(]$/.test(candidateText) || /^(?:Bs\.?S?|USD|EUR|VES|\$|€)$/i.test(candidateText)) &&
+            i + 1 < tokens.length
+        ) {
+            const nextTok = tokens[i + 1];
+            if (nextTok.x - endX <= 18) {
+                candidateText = `${candidateText} ${ normalizePdfTextFragment(nextTok.text).trim() }`;
+                endX = nextTok.xEnd ?? nextTok.x + Math.max(Number(nextTok.width || 0), nextTok.text.length * 4.5);
+                i++;
+            }
+        }
+
+        if (
+            i + 1 < tokens.length &&
+            /^(?:-|DB|DR|CR|D|C|CARGO|ABONO|ND|NC|\))$/i.test(normalizePdfTextFragment(tokens[i + 1].text).trim())
+        ) {
+            const nextTok = tokens[i + 1];
+            if (nextTok.x - endX <= 18) {
+                candidateText = `${candidateText} ${normalizePdfTextFragment(nextTok.text).trim()}`;
+                endX = nextTok.xEnd ?? nextTok.x + Math.max(Number(nextTok.width || 0), nextTok.text.length * 4.5);
+                i++;
+            }
+        }
+
+        const parsed = parsePdfMonetaryToken(candidateText, decChar);
+        if (parsed.isAmount) {
+            const width = Math.max(endX - startX, candidateText.length * 4.2);
+            results.push({
+                ...parsed,
+                x: startX,
+                width,
+                xCenter: startX + width / 2,
+                xEnd: startX + width,
+                raw: candidateText
+            });
+        }
+    }
+
+    if (results.length > 0) {
+        return results;
+    }
+
+    // 2. Respaldo por expresión regular sobre el texto completo de la línea (para casos sin tokens desglosados)
+    const inlineAmountRegex =
+        /(?:^|\s)([+\-(]?\s*(?:(?:Bs\.?S?|USD|EUR|VES|\$|€)\s*)?(?:\d{1,3}(?:[.,]\d{3})+|\d+)[.,]\d{2,4}(?:\s*[)\-]?\s*(?:DB|DR|CR|CARGO|ABONO)?)?)(?=\s|$)/gi;
+    let m;
+    let approxIdx = 0;
+    const lineText = normalizePdfTextFragment(line?.text || '');
+    while ((m = inlineAmountRegex.exec(lineText)) !== null) {
+        const rawCandidate = m[1].trim();
+        const parsed = parsePdfMonetaryToken(rawCandidate, decChar);
+        if (parsed.isAmount) {
+            const estX = m.index * 5.2 + approxIdx * 55;
+            const estW = Math.max(rawCandidate.length * 4.5, 18);
+            results.push({
+                ...parsed,
+                x: estX,
+                width: estW,
+                xCenter: estX + estW / 2,
+                xEnd: estX + estW,
+                raw: rawCandidate
+            });
+            approxIdx++;
+        }
+    }
+
+    return results;
+}
+
+/**
+ * Extrae del campo descripción un código alfanumérico equivalente a una referencia bancaria
+ * cuando el estado de cuenta PDF no posee una columna dedicada de Referencia.
+ * @param {string} descripcionText
+ * @param {number} fallbackYear
+ * @returns {string}
+ */
+function extractEquivalentReferenceFromDescription(descripcionText, fallbackYear) {
+    const clean = String(descripcionText || '').trim();
+    if (!clean) return '';
+
+    // 1. Buscar patrones etiquetados explícitos dentro de la descripción (REF, DOC, OPER, COMP, NRO, LOTE, SEC, ID, AUT, CONF)
+    const labeledMatch = /\b(?:ref(?:erencia)?\.?|doc(?:umento)?\.?|nro\.?|n[uú]m\.?|comp(?:robante)?\.?|oper(?:aci[oó]n)?\.?|serial|sec(?:uencia)?\.?|id|cod(?:igo)?\.?|lote|aut(?:orizaci[oó]n)?\.?|conf(?:irmaci[oó]n)?\.?|liq(?:uidaci[oó]n)?\.?)[:\s#\-]*([A-Z0-9][A-Z0-9\-\/._]{2,29})\b/i.exec(
+        clean
+    );
+    if (labeledMatch && /\d/.test(labeledMatch[1])) {
+        return labeledMatch[1].trim();
+    }
+
+    // 2. Buscar tokens alfanuméricos o numéricos que actúen como código de transacción/referencia en la descripción
+    const tokens = clean.split(/\s+/).filter(Boolean);
+    const candidates = [];
+
+    for (const rawTok of tokens) {
+        const tok = rawTok.replace(/^[(:;#,\-]+|[):;.,\-]+$/g, '');
+        if (tok.length < 3 || tok.length > 30) continue;
+
+        // Ignorar fechas que puedan venir dentro de la descripción
+        if (normalizePdfDateToIso(tok, fallbackYear).valid) continue;
+
+        // Debe ser alfanumérico (con guiones/barras opcionales) y contener al menos un dígito
+        if (/^[A-Z0-9][A-Z0-9\-\/._]*[A-Z0-9]$/i.test(tok) && /\d/.test(tok)) {
+            const digitCount = (tok.match(/\d/g) || []).length;
+            const hasLetters = /[A-Z]/i.test(tok);
+            // Evitar porcentajes o siglas cortas como "3%" o "24H" si hay códigos más largos
+            if (digitCount >= 2 || (digitCount >= 1 && tok.length >= 4)) {
+                candidates.push({
+                    code: tok,
+                    score: digitCount * 2 + (hasLetters ? 3 : 0) + Math.min(tok.length, 15)
+                });
+            }
+        }
+    }
+
+    if (candidates.length > 0) {
+        candidates.sort((a, b) => b.score - a.score);
+        return candidates[0].code;
+    }
+
+    return '';
+}
+
+/**
+ * Analiza las líneas estructuradas del PDF, detecta las coordenadas de las columnas de
+ * Referencia, Descripción, Débito/Debe y Crédito/Haber (o columna única de Monto) y construye
+ * las filas de transacciones siguiendo estrictamente las reglas de negocio solicitadas.
+ * @param {Array<{ page: number, y: number, text: string, tokens: Array<{ text: string, x: number, y: number, width: number, xEnd?: number }> }>} lines
+ * @param {{ banco: string, cuenta: string, empresa: string, year: number }} headerMeta
+ * @param {string} forcedMode ('auto' | 'dual' | 'single')
+ * @param {string} [decimalSeparator=','] (',' o '.')
+ */
+function parseBankStatementTransactionsFromLines(lines, headerMeta, forcedMode = 'auto', decimalSeparator = ',') {
+    let dateHeaderX = null;
+    let refHeaderX = null;
+    let descHeaderX = null;
+    let debitHeaderX = null;
+    let debitHeaderXEnd = null;
+    let creditHeaderX = null;
+    let creditHeaderXEnd = null;
+    let singleAmountHeaderX = null;
+    let balanceHeaderX = null;
+    let balanceHeaderXEnd = null;
+
+    const decChar = decimalSeparator === '.' ? '.' : ',';
+
+    // 1. Detectar cabeceras de tabla para obtener las coordenadas X e XEnd de Fecha, Referencia, Descripción, Debe, Haber, Monto y Saldo
+    for (const line of lines) {
+        const lower = line.text.toLowerCase();
+        const hasDateHeader = /\b(?:fecha|date|d[ií]a|f\.\s*oper|f\.?\s*mov)\b/.test(lower);
+        const hasFinanceHeader =
+            /\b(?:debe|d[eé]bito|debitos|d[eé]bitos|cargo|cargos|retiro|retiros|egreso|egresos|salidas|haber|cr[eé]dito|creditos|cr[eé]ditos|abono|abonos|dep[oó]sito|depositos|dep[oó]sitos|ingreso|ingresos|entradas|monto|importe|amount|saldo|balance)\b/.test(
+                lower
+            );
+        const hasDualColumnWords =
+            /\b(?:debe|d[eé]bito|debitos|d[eé]bitos|cargo|cargos|retiro|retiros|egreso|egresos)\b/.test(lower) &&
+            /\b(?:haber|cr[eé]dito|creditos|cr[eé]ditos|abono|abonos|dep[oó]sito|depositos|dep[oó]sitos|ingreso|ingresos)\b/.test(
+                lower
+            );
+
+        // Ignorar líneas que ya son movimientos con importes monetarios
+        if ( (hasDateHeader && hasFinanceHeader) || hasDualColumnWords ) {
+            if (extractAmountsFromPdfLine(line, decChar).length >= 2) continue;
+
+            for (const tok of line.tokens) {
+                const tLow = tok.text.toLowerCase();
+                const tokEnd = tok.xEnd ?? tok.x + Math.max(Number(tok.width || 0), tok.text.length * 4.5);
+
+                if (/\b(?:fecha|date|d[ií]a)\b/.test(tLow) && dateHeaderX === null) {
+                    dateHeaderX = tok.x;
+                }
+                if (
+                    /\b(?:referencia|ref\.?|nro\.?\s*ref|documento|doc\.?|comprobante|serial|operaci[oó]n|c[oó]digo|nro\.?|n[uú]mero|cheque|secuencia)\b/.test(
+                        tLow
+                    ) &&
+                    refHeaderX === null
+                ) {
+                    refHeaderX = tok.x;
+                }
+                if (
+                    /\b(?:descripci[oó]n|concepto|detalle|motivo|narrativa|observaci[oó]n|transacci[oó]n|movimiento)\b/.test(
+                        tLow
+                    ) &&
+                    descHeaderX === null
+                ) {
+                    descHeaderX = tok.x;
+                }
+                if (
+                    /\b(?:debe|d[eé]bito|debitos|d[eé]bitos|cargo|cargos|retiro|retiros|egreso|egresos|salidas|deudor)\b/.test(
+                        tLow
+                    ) &&
+                    debitHeaderX === null
+                ) {
+                    debitHeaderX = tok.x;
+                    debitHeaderXEnd = tokEnd;
+                }
+                if (
+                    /\b(?:haber|cr[eé]dito|creditos|cr[eé]ditos|abono|abonos|dep[oó]sito|depositos|dep[oó]sitos|ingreso|ingresos|entradas|acreedor)\b/.test(
+                        tLow
+                    ) &&
+                    creditHeaderX === null
+                ) {
+                    creditHeaderX = tok.x;
+                    creditHeaderXEnd = tokEnd;
+                }
+                if (/\b(?:monto|importe|valor|amount)\b/.test(tLow) && singleAmountHeaderX === null) {
+                    singleAmountHeaderX = tok.x;
+                }
+                if (/\b(?:saldo|balance|disponible)\b/.test(tLow) && balanceHeaderX === null) {
+                    balanceHeaderX = tok.x;
+                    balanceHeaderXEnd = tokEnd;
+                }
+            }
+        }
+    }
+
+    // Determinar modo de columnas ('dual' = Débito y Crédito separados | 'single' = Columna única con signo)
+    let columnMode = forcedMode;
+    if (columnMode === 'auto') {
+        if (debitHeaderX !== null && creditHeaderX !== null) {
+            columnMode = 'dual';
+        } else if (singleAmountHeaderX !== null && debitHeaderX === null && creditHeaderX === null) {
+            columnMode = 'single';
+        }
+    }
+
+    // 2. Recolectar líneas candidatas (soportando prefijos cortos antes de la fecha, filas envueltas en 2 líneas y captura de Saldo Anterior)
+    const dateLineRegex =
+        /^(?:(?:\d{1,4}|[A-Z]{1,4})\s+)?(\d{1,2}[\/\-\.]\d{1,2}(?:[\/\-\.]\d{2,4})?|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\s\-\/][A-Za-zÁÉÍÓÚáéíóú]{3,10}[\s\-\/]\d{2,4})\b\s*(.*)$/i;
+    const summaryFooterRegex =
+        /^(?:saldo\s+final|saldo\s+actual|total\s+movimientos|total\s+general|totales|resumen\s+de|promedio)/i;
+    const initialBalanceRegex = /\b(?:saldo\s+anterior|saldo\s+inicial|balance\s+anterior|balance\s+inicial)\b/i;
+
+    const rawCandidateRows = [];
+    let initialStatementBalance = null;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const cleanLineText = line.text.trim();
+
+        // Capturar Saldo Anterior / Saldo Inicial si está presente para validar matemáticamente el primer movimiento
+        if (initialBalanceRegex.test(cleanLineText)) {
+            const initAmounts = extractAmountsFromPdfLine(line, decChar);
+            if (initAmounts.length > 0) {
+                initialStatementBalance = initAmounts[initAmounts.length - 1].absValue;
+            }
+            continue;
+        }
+
+        // Ignorar líneas de totales o resúmenes de pie de página
+        if (summaryFooterRegex.test(cleanLineText)) {
+            continue;
+        }
+
+        const dateMatch = dateLineRegex.exec(cleanLineText);
+        if (!dateMatch) continue;
+
+        const rawDateToken = dateMatch[1];
+        let restOfLine = dateMatch[2] || '';
+        const normDate = normalizePdfDateToIso(rawDateToken, headerMeta.year);
+        if (!normDate.valid) continue;
+
+        // Coordenada X mínima después del token de fecha para no confundir la fecha con un importe
+        const dateTokObj = line.tokens.find((t) => t.text.includes(rawDateToken)) || line.tokens[0];
+        const minXAfterDate = dateTokObj ? dateTokObj.x + 8 : -Infinity;
+
+        let amounts = extractAmountsFromPdfLine(line, decChar, minXAfterDate);
+        let combinedLine = line;
+
+        // Si la fila tiene Fecha y Descripción en la línea `i`, pero el monto (ej. 1.05) quedó en la línea `i + 1` por salto de línea
+        if (amounts.length === 0 && i + 1 < lines.length) {
+            const nextLine = lines[i + 1];
+            const nextText = nextLine.text.trim();
+            const isSamePageAndClose =
+                nextLine.page === line.page && Math.abs(line.y - nextLine.y) <= 28;
+            const nextHasDate = dateLineRegex.test(nextText);
+            const nextIsSummary = summaryFooterRegex.test(nextText) || initialBalanceRegex.test(nextText);
+
+            if (isSamePageAndClose && !nextHasDate && !nextIsSummary) {
+                const nextAmounts = extractAmountsFromPdfLine(nextLine, decChar, minXAfterDate);
+                if (nextAmounts.length > 0) {
+                    amounts = nextAmounts;
+                    restOfLine = `${restOfLine} ${nextText}`.replace(/\s+/g, ' ').trim();
+                    combinedLine = {
+                        ...line,
+                        text: `${line.text} ${nextLine.text}`.replace(/\s+/g, ' ').trim(),
+                        tokens: [...line.tokens, ...nextLine.tokens].sort((a, b) => a.x - b.x)
+                    };
+                    i++; // Consumir la línea envolvente
+                }
+            }
+        }
+
+        if (amounts.length === 0) continue;
+
+        rawCandidateRows.push({
+            line: combinedLine,
+            isoDate: normDate.isoDate,
+            restOfLine,
+            amounts
+        });
+    }
+
+    // Analizar agrupamiento de bordes derechos (`xEnd`) de los importes del movimiento (columna 1 de importes)
+    // En estados de cuenta bancarios los importes están alineados a la derecha, por lo que `1.05` y `150,000.00`
+    // dentro de la columna "Debe" comparten exactamente el mismo `xEnd` (borde derecho).
+    let inferredDebitXEnd = debitHeaderXEnd ?? (debitHeaderX !== null ? debitHeaderX + 42 : null);
+    let inferredCreditXEnd = creditHeaderXEnd ?? (creditHeaderX !== null ? creditHeaderX + 42 : null);
+
+    if (rawCandidateRows.length > 0) {
+        const movAmountXEnds = rawCandidateRows
+            .map((r) => r.amounts[0].xEnd ?? r.amounts[0].x + 25)
+            .sort((a, b) => a - b);
+        const minXEnd = movAmountXEnds[0] || 0;
+        const maxXEnd = movAmountXEnds[movAmountXEnds.length - 1] || 0;
+
+        if (columnMode === 'auto') {
+            const hasThreeAmounts = rawCandidateRows.some((r) => r.amounts.length >= 3);
+            const hasNegativeSigns = rawCandidateRows.some((r) =>
+                r.amounts.some((a) => a.hasExplicitNegative)
+            );
+
+            if (hasThreeAmounts) {
+                columnMode = 'dual';
+            } else if (hasNegativeSigns && debitHeaderX === null && creditHeaderX === null) {
+                columnMode = 'single';
+            } else if (maxXEnd - minXEnd > 38) {
+                columnMode = 'dual';
+            } else {
+                columnMode = 'single';
+            }
+        }
+
+        // Si es modo dual y existen dos clusters claros de bordes derechos (Debe a la izquierda, Haber a la derecha)
+        if (columnMode === 'dual' && maxXEnd - minXEnd > 38) {
+            if (inferredDebitXEnd === null) inferredDebitXEnd = minXEnd;
+            if (inferredCreditXEnd === null) inferredCreditXEnd = maxXEnd;
+        }
+    }
+
+    // Expresión regular para limpiar los importes monetarios del texto de descripción/referencia
+    const amountStripRegex =
+        /(?:^|\s)[+\-(]?\s*(?:(?:Bs\.?S?|USD|EUR|VES|\$|€)\s*)?(?:\d{1,3}(?:[.,]\d{3})+|\d+)[.,]\d{1,4}(?:\s*[)\-*]?\s*(?:DB|DR|CR|CARGO|ABONO)?)?(?=\s|$)/gi;
+
+    // 3. Construir las transacciones finales con los 8 campos estrictos y verificación matemática de Saldo
+    const extractedTransactions = [];
+    let runningBalance = initialStatementBalance;
+
+    for (let idx = 0; idx < rawCandidateRows.length; idx++) {
+        const item = rawCandidateRows[idx];
+        const { line, isoDate, restOfLine, amounts } = item;
+        const firstAmountX = amounts[0]?.x ?? Infinity;
+
+        const textWithoutAmounts = restOfLine
+            .replace(amountStripRegex, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        let referencia = '';
+        let descripcion = textWithoutAmounts;
+
+        // REGLA 1A: Si el PDF posee una columna de Referencia detectada en el encabezado (`refHeaderX !== null`),
+        // extraer TODO el contenido alfanumérico que caiga en el rango horizontal de esa columna.
+        if (refHeaderX !== null && line.tokens && line.tokens.length > 1) {
+            let refMinX;
+            let refMaxX;
+
+            if (descHeaderX !== null && refHeaderX < descHeaderX) {
+                refMinX = refHeaderX - 28;
+                refMaxX = descHeaderX - 8;
+            } else if (descHeaderX !== null && refHeaderX > descHeaderX) {
+                refMinX = refHeaderX - 25;
+                refMaxX = firstAmountX - 8;
+            } else {
+                refMinX = refHeaderX - 25;
+                refMaxX = Math.min(refHeaderX + 95, firstAmountX - 8);
+            }
+
+            const refTokens = [];
+            const descTokens = [];
+
+            for (let tIdx = 1; tIdx < line.tokens.length; tIdx++) {
+                const tok = line.tokens[tIdx];
+                if (tok.x >= firstAmountX - 4) continue;
+                if (parsePdfMonetaryToken(tok.text, decChar).isAmount) continue;
+
+                if (tIdx === 1 && tok.x < refMinX && normalizePdfDateToIso(tok.text, headerMeta.year).valid) {
+                    continue;
+                }
+
+                if (tok.x >= refMinX && tok.x <= refMaxX) {
+                    refTokens.push(tok.text);
+                } else {
+                    descTokens.push(tok.text);
+                }
+            }
+
+            const joinedRefColumn = refTokens.join(' ').replace(/\s+/g, ' ').trim();
+            if (joinedRefColumn) {
+                referencia = joinedRefColumn;
+                if (descTokens.length > 0) {
+                    descripcion = descTokens.join(' ').replace(/\s+/g, ' ').trim();
+                }
+            }
+        }
+
+        // REGLA 1B: Si el PDF no tiene columna de Referencia (o la columna vino vacía en esta fila),
+        // extraer del campo Descripción el código alfanumérico equivalente a una referencia.
+        if (!referencia) {
+            const tokensAfterDate = textWithoutAmounts.split(' ').filter(Boolean);
+            let startTokenIdx = 0;
+            if (tokensAfterDate[0] && normalizePdfDateToIso(tokensAfterDate[0], headerMeta.year).valid) {
+                startTokenIdx = 1;
+            }
+
+            const firstCandidate = tokensAfterDate[startTokenIdx] || '';
+            if (
+                /^[A-Z0-9][A-Z0-9\-\/._]{2,29}$/i.test(firstCandidate) &&
+                /\d/.test(firstCandidate) &&
+                tokensAfterDate.length > startTokenIdx + 1
+            ) {
+                referencia = firstCandidate;
+                descripcion = tokensAfterDate.slice(startTokenIdx + 1).join(' ').trim() || textWithoutAmounts;
+            } else {
+                const fromDesc = extractEquivalentReferenceFromDescription(
+                    textWithoutAmounts,
+                    headerMeta.year
+                );
+                referencia = fromDesc || `REF-${idx + 1}`;
+            }
+        }
+
+        // Determinar Debe y Haber según las reglas 7 y 8 (con validación matemática de Saldo, alineación derecha `xEnd` y palabras clave)
+        let debe = 0.0;
+        let haber = 0.0;
+
+        const isDebitKeywordInLine =
+            /\b(?:cargo|d[eé]bito|debitos|retiro|comisi[oó]n|comis\.?|igtf|itf|iva|impuesto|timbre|tasa|pago|compra|pos|tdd|nota\s*de\s*d[eé]bito|n\/d|nd|transf\.?\s*enviada|transferencia\s*enviada|transf\.?\s*terceros|cheque|mantenimiento|mensualidad|tarifa|afiliaci[oó]n|domiciliaci[oó]n|retenci[oó]n|cajero|atm|egreso)\b/i.test(
+                textWithoutAmounts
+            );
+        const isCreditKeywordInLine =
+            /\b(?:abono|cr[eé]dito|creditos|dep[oó]sito|deposito|nota\s*de\s*cr[eé]dito|n\/c|nc|transf\.?\s*recibida|transferencia\s*recibida|intereses|rendimiento|reverso|devoluci[oó]n|ingreso)\b/i.test(
+                textWithoutAmounts
+            );
+
+        // Función auxiliar para clasificar un importe único (`movObj`) como Debe ('debit') o Haber ('credit')
+        const classifySingleMovementAmount = (movObj, currentRowBalance = null) => {
+            // 1. Signo explícito (-, (), DB, DR, CARGO vs +, CR, ABONO)
+            if (movObj.hasExplicitNegative) return 'debit';
+            if (movObj.hasExplicitPositive) return 'credit';
+
+            // 2. Verificación matemática contra el Saldo acumulado anterior (`runningBalance`)
+            if (runningBalance !== null && currentRowBalance !== null && movObj.absValue > 0) {
+                const diffIfDebit = Math.abs(runningBalance - movObj.absValue - currentRowBalance);
+                const diffIfCredit = Math.abs(runningBalance + movObj.absValue - currentRowBalance);
+                if (diffIfDebit <= 0.05 && diffIfDebit < diffIfCredit) {
+                    return 'debit';
+                }
+                if (diffIfCredit <= 0.05 && diffIfCredit < diffIfDebit) {
+                    return 'credit';
+                }
+            }
+
+            // 3. Si es la primera fila sin Saldo Anterior, verificar contra el Saldo de la fila siguiente (`idx + 1`)
+            if (
+                runningBalance === null &&
+                currentRowBalance !== null &&
+                idx + 1 < rawCandidateRows.length &&
+                rawCandidateRows[idx + 1].amounts.length >= 2
+            ) {
+                // La coordenada X de la columna determina la posición
+            }
+
+            // 4. Posición horizontal por borde derecho (`xEnd`) y centro (`xCenter`) respecto a las columnas Debe y Haber
+            if (inferredDebitXEnd !== null && inferredCreditXEnd !== null) {
+                const movXEnd = movObj.xEnd ?? movObj.x + 20;
+                const distToDebitEnd = Math.abs(movXEnd - inferredDebitXEnd);
+                const distToCreditEnd = Math.abs(movXEnd - inferredCreditXEnd);
+
+                // Si las cabeceras también existen, verificar a qué columna pertenece el rango X
+                if (debitHeaderX !== null && creditHeaderX !== null) {
+                    const splitX = ((debitHeaderXEnd ?? debitHeaderX + 35) + creditHeaderX) / 2;
+                    const movCenter = movObj.xCenter ?? movObj.x + 10;
+                    if (movCenter <= splitX || distToDebitEnd <= distToCreditEnd) {
+                        return 'debit';
+                    }
+                    return 'credit';
+                }
+
+                if (distToDebitEnd <= distToCreditEnd) {
+                    return 'debit';
+                }
+                return 'credit';
+            }
+
+            // 5. Palabras clave bancarias en la descripción
+            if (isDebitKeywordInLine && !isCreditKeywordInLine) return 'debit';
+            if (isCreditKeywordInLine && !isDebitKeywordInLine) return 'credit';
+
+            // 6. Si solo se detectó cabecera de Debe y el monto está cerca de ella
+            if (debitHeaderX !== null && Math.abs(movObj.x - debitHeaderX) <= 65) {
+                return 'debit';
+            }
+
+            return 'credit';
+        };
+
+        if (columnMode === 'single') {
+            const movAmountObj = amounts[0];
+            const rowBalanceVal = amounts.length >= 2 ? amounts[amounts.length - 1].absValue : null;
+            let signedVal = movAmountObj.signedValue;
+
+            if (!movAmountObj.hasExplicitNegative && !movAmountObj.hasExplicitPositive) {
+                const side = classifySingleMovementAmount(movAmountObj, rowBalanceVal);
+                signedVal = side === 'debit' ? -Math.abs(movAmountObj.absValue) : Math.abs(movAmountObj.absValue);
+            }
+
+            if (signedVal < 0) {
+                debe = Math.abs(signedVal);
+                haber = 0.0;
+            } else {
+                debe = 0.0;
+                haber = Math.abs(signedVal);
+            }
+
+            if (rowBalanceVal !== null) {
+                runningBalance = rowBalanceVal;
+            }
+        } else {
+            // Regla de Columnas Separadas (Débito y Crédito):
+            if (amounts.length >= 3) {
+                // [Debe, Haber, Saldo]
+                debe = Math.abs(amounts[0].absValue);
+                haber = Math.abs(amounts[1].absValue);
+                runningBalance = amounts[2].absValue;
+            } else if (amounts.length === 2) {
+                const first = amounts[0];
+                const second = amounts[1];
+
+                const secondLooksLikeBalance =
+                    (balanceHeaderX !== null && Math.abs(second.x - balanceHeaderX) < 65) ||
+                    (balanceHeaderXEnd !== null && Math.abs((second.xEnd ?? second.x) - balanceHeaderXEnd) < 55) ||
+                    (creditHeaderXEnd !== null && (second.xEnd ?? second.x) > creditHeaderXEnd + 35) ||
+                    (first.absValue !== 0 && second.absValue !== 0);
+
+                if (!secondLooksLikeBalance && (first.absValue === 0 || second.absValue === 0)) {
+                    // Columnas explícitas [Debe, Haber] sin columna de Saldo donde una de las dos viene en 0.00
+                    debe = Math.abs(first.absValue);
+                    haber = Math.abs(second.absValue);
+                } else {
+                    // `first` es el monto del movimiento (en Debe o Haber) y `second` es el Saldo acumulado
+                    const side = classifySingleMovementAmount(first, second.absValue);
+                    if (side === 'debit') {
+                        debe = first.absValue;
+                        haber = 0.0;
+                    } else {
+                        debe = 0.0;
+                        haber = first.absValue;
+                    }
+                    runningBalance = second.absValue;
+                }
+            } else if (amounts.length === 1) {
+                const only = amounts[0];
+                const side = classifySingleMovementAmount(only, null);
+                if (side === 'debit') {
+                    debe = only.absValue;
+                    haber = 0.0;
+                } else {
+                    debe = 0.0;
+                    haber = only.absValue;
+                }
+            }
+        }
+
+        extractedTransactions.push({
+            rowId: idx + 1,
+            banco: headerMeta.banco,
+            cuenta: headerMeta.cuenta,
+            fecha: isoDate,
+            empresa: headerMeta.empresa,
+            referencia,
+            descripcion: descripcion || 'Movimiento estado de cuenta PDF',
+            tipo: 'CUENTA', // Regla 6: Obligatoriamente la palabra fija "CUENTA"
+            debe: Number(debe.toFixed(2)),
+            haber: Number(haber.toFixed(2))
+        });
+    }
+
+    return {
+        transactions: extractedTransactions,
+        detectedMode: columnMode
+    };
+}
+
+/**
+ * Renderiza la tabla HTML interactiva (`#pdfPreviewTableBody`) con los 8 campos estrictos
+ * extraídos del estado de cuenta en PDF.
+ */
+function renderPdfPreviewTable() {
+    const previewSection = document.getElementById('pdfPreviewSection');
+    const tbody = document.getElementById('pdfPreviewTableBody');
+    const statsBadge = document.getElementById('pdfPreviewStatsBadge');
+    const totalsText = document.getElementById('pdfPreviewTotalsText');
+    const btnTopCsv = document.getElementById('btnDownloadPdfAnalizadoCsvTop');
+    const moneda = (document.getElementById('pdfMonedaDefault')?.value || 'VES').toUpperCase();
+
+    if (btnTopCsv) {
+        btnTopCsv.disabled = statePdfPreviewRows.length === 0;
+    }
+
+    if (!previewSection || !tbody) return;
+
+    if (statePdfPreviewRows.length === 0) {
+        previewSection.classList.add('d-none');
+        tbody.innerHTML = '';
+        return;
+    }
+
+    previewSection.classList.remove('d-none');
+
+    let sumDebe = 0;
+    let sumHaber = 0;
+
+    tbody.innerHTML = '';
+    statePdfPreviewRows.forEach((row, index) => {
+        sumDebe += Number(row.debe || 0);
+        sumHaber += Number(row.haber || 0);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td data-label="1. Nombre del Banco">
+                <input
+                    type="text"
+                    class="form-control form-control-sm pdf-row-input"
+                    data-idx="${index}"
+                    data-field="banco"
+                    value="${String(row.banco || '').replace(/"/g, '&quot;')}"
+                />
+            </td>
+            <td data-label="2. Nro. de Cuenta">
+                <input
+                    type="text"
+                    class="form-control form-control-sm pdf-row-input"
+                    data-idx="${index}"
+                    data-field="cuenta"
+                    value="${String(row.cuenta || '').replace(/"/g, '&quot;')}"
+                />
+            </td>
+            <td data-label="3. Fecha (YYYY-MM-DD)">
+                <input
+                    type="date"
+                    class="form-control form-control-sm pdf-row-input"
+                    data-idx="${index}"
+                    data-field="fecha"
+                    value="${row.fecha || ''}"
+                />
+            </td>
+            <td data-label="4. Empresa / Titular">
+                <input
+                    type="text"
+                    class="form-control form-control-sm pdf-row-input"
+                    data-idx="${index}"
+                    data-field="empresa"
+                    value="${String(row.empresa || '').replace(/"/g, '&quot;')}"
+                />
+            </td>
+            <td data-label="5. Nro. Referencia">
+                <input
+                    type="text"
+                    class="form-control form-control-sm pdf-row-input"
+                    data-idx="${index}"
+                    data-field="referencia"
+                    value="${String(row.referencia || '').replace(/"/g, '&quot;')}"
+                />
+            </td>
+            <td data-label="6. Tipo" class="text-center">
+                <span class="badge badge-status-active">CUENTA</span>
+            </td>
+            <td data-label="7. Debe">
+                <input
+                    type="number"
+                    step="any"
+                    class="form-control form-control-sm text-end fw-bold pdf-row-input text-danger"
+                    data-idx="${index}"
+                    data-field="debe"
+                    value="${Number(row.debe || 0).toFixed(2)}"
+                />
+            </td>
+            <td data-label="8. Haber">
+                <input
+                    type="number"
+                    step="any"
+                    class="form-control form-control-sm text-end fw-bold pdf-row-input text-success"
+                    data-idx="${index}"
+                    data-field="haber"
+                    value="${Number(row.haber || 0).toFixed(2)}"
+                />
+            </td>
+            <td data-label="Quitar" class="text-center">
+                <button
+                    type="button"
+                    class="btn btn-sm btn-danger py-0 px-2 btn-remove-pdf-row"
+                    data-idx="${index}"
+                    title="Quitar fila de la vista previa"
+                >
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    const updateTotalsSummary = () => {
+        let totalD = 0;
+        let totalH = 0;
+        statePdfPreviewRows.forEach((r) => {
+            totalD += Number(r.debe || 0);
+            totalH += Number(r.haber || 0);
+        });
+        const neto = totalH - totalD; // Crédito (Haber) menos Débito (Debe)
+        if (statsBadge) {
+            statsBadge.textContent = `${statePdfPreviewRows.length} movimiento(s) mapeado(s)`;
+        }
+        if (totalsText) {
+            const netoColor = neto >= 0 ? '#198754' : '#dc3545';
+            totalsText.innerHTML = `Total Debe (Débito): <span class="text-danger">${formatCurrencyAmount(totalD, moneda)} ${moneda}</span> &nbsp;|&nbsp; Total Haber (Crédito): <span class="text-success">${formatCurrencyAmount(totalH, moneda)} ${moneda}</span> &nbsp;|&nbsp; Saldo Neto (Crédito - Débito): <strong style="color: ${netoColor};">${neto >= 0 ? '+' : ''}${formatCurrencyAmount(neto, moneda)} ${moneda}</strong>`;
+        }
+    };
+
+    updateTotalsSummary();
+
+    tbody.querySelectorAll('.pdf-row-input').forEach((input) => {
+        input.addEventListener('input', (e) => {
+            const idx = Number(e.target.getAttribute('data-idx'));
+            const field = e.target.getAttribute('data-field');
+            if (!statePdfPreviewRows[idx] || !field) return;
+
+            if (field === 'debe' || field === 'haber') {
+                statePdfPreviewRows[idx][field] = parseFloat(e.target.value) || 0;
+                updateTotalsSummary();
+            } else {
+                statePdfPreviewRows[idx][field] = e.target.value;
+            }
+        });
+    });
+
+    tbody.querySelectorAll('.btn-remove-pdf-row').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.getAttribute('data-idx'));
+            statePdfPreviewRows.splice(idx, 1);
+            renderPdfPreviewTable();
+        });
+    });
+}
+
+/**
+ * Procesa el archivo PDF seleccionado, extrae los metadatos del encabezado y las transacciones
+ * y las presenta en la tabla HTML interactiva de vista previa.
+ */
+async function processPdfBankStatement() {
+    const fileInput = document.getElementById('inputPdfMovimientos');
+    const btnProcess = document.getElementById('btnProcessPdfMovimientos');
+    const modeSelect = document.getElementById('pdfColumnModeSelect');
+    const badgeMode = document.getElementById('badgePdfModeDetected');
+
+    hidePdfImportAlert();
+
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showPdfImportAlert('Por favor seleccione un archivo PDF de estado de cuenta bancario.', 'warning');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+        showPdfImportAlert(
+            'Formato inválido: el archivo seleccionado no es un documento PDF (<code>.pdf</code>).',
+            'danger'
+        );
+        return;
+    }
+
+    if (btnProcess) {
+        btnProcess.disabled = true;
+        btnProcess.innerHTML =
+            '<span class="spinner-border spinner-border-sm me-1"></span>Analizando PDF...';
+    }
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const { lines, numPages } = await extractStructuredLinesFromPdf(arrayBuffer);
+
+        if (lines.length === 0) {
+            showPdfImportAlert(
+                'El archivo PDF no contiene texto seleccionable (parece ser una imagen escaneada sin capa de texto OCR). Por favor suba un estado de cuenta PDF digital.',
+                'danger'
+            );
+            statePdfPreviewRows = [];
+            renderPdfPreviewTable();
+            return;
+        }
+
+        const headerMeta = extractPdfHeaderMetadata(lines);
+        const forcedMode = modeSelect?.value || 'auto';
+        const decimalSeparator = document.getElementById('pdfDecimalSeparator')?.value || ',';
+        const { transactions, detectedMode } = parseBankStatementTransactionsFromLines(
+            lines,
+            headerMeta,
+            forcedMode,
+            decimalSeparator
+        );
+
+        if (transactions.length === 0) {
+            showPdfImportAlert(
+                `Se analizaron ${numPages} página(s) y ${lines.length} líneas de texto (separador decimal configurado: "<code>${decimalSeparator}</code>"), pero no se encontraron filas de movimientos con formato de fecha y monto reconocibles. Verifique que el separador decimal seleccionado coincida con el del PDF.`,
+                'danger'
+            );
+            statePdfPreviewRows = [];
+            renderPdfPreviewTable();
+            return;
+        }
+
+        // Poblar controles de encabezado detectado
+        const bancoInput = document.getElementById('pdfDetectedBanco');
+        const cuentaInput = document.getElementById('pdfDetectedCuenta');
+        const empresaInput = document.getElementById('pdfDetectedEmpresa');
+        const monedaSelect = document.getElementById('pdfMonedaDefault');
+
+        if (bancoInput) bancoInput.value = headerMeta.banco;
+        if (cuentaInput) cuentaInput.value = headerMeta.cuenta;
+        if (empresaInput) empresaInput.value = headerMeta.empresa;
+        if (monedaSelect && headerMeta.moneda && SUPPORTED_CURRENCIES.includes(headerMeta.moneda)) {
+            monedaSelect.value = headerMeta.moneda;
+        }
+
+        if (badgeMode) {
+            const sepLabel = decimalSeparator === '.' ? 'Punto (.)' : 'Coma (,)';
+            badgeMode.textContent =
+                detectedMode === 'single'
+                    ? `Modo: Columna Única (+ Haber / - Debe) | Decimal: ${sepLabel}`
+                    : `Modo: Columnas Separadas (Débito / Crédito) | Decimal: ${sepLabel}`;
+        }
+
+        statePdfPreviewRows = transactions;
+        renderPdfPreviewTable();
+
+        showPdfImportAlert(
+            `<strong>Análisis de PDF exitoso:</strong> Se extrajeron <strong>${transactions.length}</strong> movimiento(s) en ${numPages} página(s). Revise la vista previa interactiva y presione <strong>"2. Guardar Movimientos del PDF en Supabase"</strong>.`,
+            'success'
+        );
+    } catch (err) {
+        statePdfPreviewRows = [];
+        renderPdfPreviewTable();
+        showPdfImportAlert(`<strong>Error al procesar el PDF:</strong> ${err.message}`, 'danger');
+    } finally {
+        if (btnProcess) {
+            btnProcess.disabled = false;
+            btnProcess.innerHTML =
+                '<i class="bi bi-cpu-fill me-1"></i>1. Analizar y Previsualizar PDF';
+        }
+    }
+}
+
+/**
+ * Aplica los valores de Banco, Cuenta y Empresa de la barra de encabezado detectado
+ * a todas las filas activas en la vista previa del PDF.
+ */
+function applyPdfHeaderToAllPreviewRows() {
+    if (statePdfPreviewRows.length === 0) return;
+
+    const bancoVal = (document.getElementById('pdfDetectedBanco')?.value || '').trim();
+    const cuentaVal = (document.getElementById('pdfDetectedCuenta')?.value || '').trim();
+    const empresaVal = (document.getElementById('pdfDetectedEmpresa')?.value || '').trim();
+
+    statePdfPreviewRows = statePdfPreviewRows.map((row) => ({
+        ...row,
+        banco: bancoVal || row.banco,
+        cuenta: cuentaVal || row.cuenta,
+        empresa: empresaVal || row.empresa,
+        tipo: 'CUENTA'
+    }));
+
+    renderPdfPreviewTable();
+    showPdfImportAlert(
+        'Datos de Banco, Cuenta y Empresa aplicados a todas las filas de la vista previa.',
+        'info'
+    );
+}
+
+/**
+ * Descarga en un archivo CSV (UTF-8 con BOM) la tabla analizada y previsualizada del PDF
+ * con los 8 campos estrictos mapeados (`Nombre del Banco`, `Nro de Cuenta Bancaria`,
+ * `Fecha (YYYY-MM-DD)`, `Empresa o Titular`, `Nro de Referencia`, `Tipo`, `Debe`, `Haber`).
+ */
+function downloadPdfPreviewTableCsv() {
+    if (!statePdfPreviewRows || statePdfPreviewRows.length === 0) {
+        showPdfImportAlert(
+            'Primero analice un archivo PDF para poder descargar la tabla extraída en CSV.',
+            'warning'
+        );
+        return;
+    }
+
+    const headers = [
+        'Nombre del Banco',
+        'Nro de Cuenta Bancaria',
+        'Fecha (YYYY-MM-DD)',
+        'Nombre de la Empresa o Titular',
+        'Nro de Referencia',
+        'Tipo',
+        'Debe',
+        'Haber'
+    ];
+
+    const escapeCsvField = (val) => {
+        const clean = String(val ?? '').replace(/\r?\n/g, ' ').trim();
+        if (clean.includes(';') || clean.includes('"')) {
+            return `"${clean.replace(/"/g, '""')}"`;
+        }
+        return clean;
+    };
+
+    const lines = [headers.join(';')];
+
+    statePdfPreviewRows.forEach((row) => {
+        lines.push(
+            [
+                escapeCsvField(row.banco || ''),
+                escapeCsvField(row.cuenta || ''),
+                escapeCsvField(row.fecha || ''),
+                escapeCsvField(row.empresa || ''),
+                escapeCsvField(row.referencia || ''),
+                'CUENTA',
+                Number(row.debe || 0).toFixed(2),
+                Number(row.haber || 0).toFixed(2)
+            ].join(';')
+        );
+    });
+
+    const csvContent = '\uFEFF' + lines.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `estado_cuenta_pdf_analizado_${dateStamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+/**
+ * Inserta las filas previsualizadas desde el PDF directamente en la tabla relacional
+ * `public.movimientos` de Supabase (resolviendo o creando `banco_id` y `cuenta_id` y
+ * asegurando `tipo = "CUENTA"`).
+ */
+async function savePdfPreviewToMovimientos() {
+    if (statePdfPreviewRows.length === 0) {
+        showPdfImportAlert('No hay movimientos en la vista previa del PDF para guardar.', 'warning');
+        return;
+    }
+
+    const btnSave = document.getElementById('btnSavePdfMovimientos');
+    const autoCreate = document.getElementById('chkAutoCreateBancoCuenta')?.checked ?? true;
+    const monedaPlano = (document.getElementById('pdfMonedaDefault')?.value || 'VES').trim().toUpperCase();
+
+    if (btnSave) {
+        btnSave.disabled = true;
+        btnSave.innerHTML =
+            '<span class="spinner-border spinner-border-sm me-1"></span>Guardando en Supabase...';
+    }
+
+    try {
+        const payloadsToInsert = [];
+        const errors = [];
+
+        for (let i = 0; i < statePdfPreviewRows.length; i++) {
+            const row = statePdfPreviewRows[i];
+            const rowNum = i + 1;
+
+            const bancoNombre = String(row.banco || '').trim();
+            const cuentaNro = String(row.cuenta || '').trim();
+            const fechaIso = String(row.fecha || '').trim();
+            const empresaNombre = String(row.empresa || '').trim();
+            const referenciaNro = String(row.referencia || '').trim();
+            const debeVal = Number(row.debe || 0);
+            const haberVal = Number(row.haber || 0);
+
+            if (!bancoNombre) {
+                errors.push(`Fila #${rowNum}: El nombre del banco es obligatorio.`);
+                continue;
+            }
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaIso)) {
+                errors.push(`Fila #${rowNum}: La fecha "${fechaIso}" debe tener formato YYYY-MM-DD.`);
+                continue;
+            }
+
+            // 1. Resolver o crear Banco en `public.bancos`
+            let bancoObj = stateBancos.find(
+                (b) => b.nombre_legible.trim().toLowerCase() === bancoNombre.toLowerCase()
+            );
+
+            if (!bancoObj) {
+                if (autoCreate) {
+                    const { data: createdBancos, error: errB } = await supabase
+                        .from('bancos')
+                        .insert([
+                            {
+                                nombre: encryptLocalSymmetric(bancoNombre),
+                                descripcion: encryptLocalSymmetric('Creado desde importación de Estado de Cuenta PDF')
+                            }
+                        ])
+                        .select('id, created_at, nombre, descripcion');
+
+                    if (errB || !createdBancos || createdBancos.length === 0) {
+                        errors.push(`Fila #${rowNum}: No se pudo crear el banco "${bancoNombre}".`);
+                        continue;
+                    }
+
+                    bancoObj = {
+                        ...createdBancos[0],
+                        nombre_legible: bancoNombre,
+                        descripcion_legible: 'Creado desde importación de Estado de Cuenta PDF'
+                    };
+                    stateBancos.push(bancoObj);
+                } else {
+                    errors.push(`Fila #${rowNum}: El banco "${bancoNombre}" no existe en la tabla bancos.`);
+                    continue;
+                }
+            }
+
+            // 2. Resolver o crear Cuenta en `public.cuentas`
+            let cuentaId = null;
+            if (cuentaNro && cuentaNro !== 'SIN-CUENTA-DETECTADA') {
+                let cuentaObj =
+                    stateCuentas.find(
+                        (c) =>
+                            Number(c.banco_id) === Number(bancoObj.id) &&
+                            c.cuenta_legible.trim().toLowerCase() === cuentaNro.toLowerCase()
+                    ) ||
+                    stateCuentas.find(
+                        (c) => c.cuenta_legible.trim().toLowerCase() === cuentaNro.toLowerCase()
+                    );
+
+                if (!cuentaObj && autoCreate) {
+                    const { data: createdCtas, error: errC } = await supabase
+                        .from('cuentas')
+                        .insert([
+                            {
+                                banco_id: bancoObj.id,
+                                cuenta: encryptLocalSymmetric(cuentaNro),
+                                tipo: encryptLocalSymmetric('Corriente')
+                            }
+                        ])
+                        .select('id, created_at, banco_id, cuenta, tipo');
+
+                    if (!errC && createdCtas && createdCtas.length > 0) {
+                        cuentaObj = {
+                            ...createdCtas[0],
+                            cuenta_legible: cuentaNro,
+                            tipo_legible: 'Corriente',
+                            banco_nombre: bancoObj.nombre_legible
+                        };
+                        stateCuentas.push(cuentaObj);
+                    }
+                }
+
+                if (cuentaObj) {
+                    cuentaId = cuentaObj.id;
+                }
+            }
+
+            // 3. Construir registro para `public.movimientos` con Tipo fijo = "CUENTA"
+            payloadsToInsert.push({
+                banco_id: bancoObj.id,
+                cuenta_id: cuentaId,
+                fecha: fechaIso,
+                moneda: encryptLocalSymmetric(monedaPlano),
+                empresa: empresaNombre ? encryptLocalSymmetric(empresaNombre) : null,
+                referencia: referenciaNro ? encryptLocalSymmetric(referenciaNro) : null,
+                descripcion: encryptLocalSymmetric(row.descripcion || `Estado de cuenta PDF (${cuentaNro || bancoNombre})`),
+                tipo: encryptLocalSymmetric('CUENTA'),
+                debe: debeVal,
+                haber: haberVal
+            });
+        }
+
+        if (payloadsToInsert.length > 0) {
+            const BATCH_SIZE = 500;
+            const totalBatches = Math.ceil(payloadsToInsert.length / BATCH_SIZE);
+
+            for (let bIdx = 0; bIdx < totalBatches; bIdx++) {
+                const start = bIdx * BATCH_SIZE;
+                const end = Math.min(start + BATCH_SIZE, payloadsToInsert.length);
+                const chunk = payloadsToInsert.slice(start, end);
+
+                if (btnSave) {
+                    btnSave.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Guardando lote ${bIdx + 1}/${totalBatches} (${end}/${payloadsToInsert.length})...`;
+                }
+
+                const { error: insertErr } = await supabase
+                    .from('movimientos')
+                    .insert(chunk);
+
+                if (insertErr) {
+                    showPdfImportAlert(
+                        `Error al insertar lote ${bIdx + 1}/${totalBatches} en <code>public.movimientos</code>: ${insertErr.message}`,
+                        'danger'
+                    );
+                    return;
+                }
+            }
+        }
+
+        await refreshAllDatabaseData();
+
+        statePdfPreviewRows = [];
+        renderPdfPreviewTable();
+        const fileInput = document.getElementById('inputPdfMovimientos');
+        if (fileInput) fileInput.value = '';
+
+        const msg = `<strong>Importación PDF completada:</strong> Se guardaron <strong>${payloadsToInsert.length}</strong> movimiento(s) en <code>public.movimientos</code> con Tipo <code>CUENTA</code>.${
+            errors.length > 0 ? `<br><span class="text-danger">${errors.join('<br>')}</span>` : ''
+        }`;
+        showPdfImportAlert(msg, errors.length > 0 && payloadsToInsert.length === 0 ? 'danger' : 'success');
+        showMovModalAlert(msg, 'success');
+        showFeedback(
+            `Se importaron ${payloadsToInsert.length} movimientos desde el estado de cuenta PDF.`,
+            'success'
+        );
+    } catch (err) {
+        showPdfImportAlert(`Error inesperado al guardar movimientos del PDF: ${err.message}`, 'danger');
+    } finally {
+        if (btnSave) {
+            btnSave.disabled = false;
+            btnSave.innerHTML =
+                '<i class="bi bi-cloud-check-fill me-1"></i>2. Guardar Movimientos del PDF en Supabase';
+        }
+    }
+}
+
 function getFilteredSortedExportRows() {
     const st = tableStates.exportSaldos;
     let rows = stateVistaResumenSaldos
@@ -1884,7 +3582,7 @@ function renderDashboardComparativeBars(vistaList) {
                                 <div
                                     class="progress-bar"
                                     role="progressbar"
-                                    style="width: ${pct}%; background-color: var(--bg-green-deep);"
+                                    style="width: ${pct}%; background-color: #0d6efd;"
                                     aria-valuenow="${pct}"
                                     aria-valuemin="0"
                                     aria-valuemax="100"
@@ -1925,13 +3623,13 @@ function renderDashboardComparativeBars(vistaList) {
                                 <div
                                     class="progress-bar"
                                     role="progressbar"
-                                    style="width: ${pctDebe}%; background-color: var(--bg-green-deep);"
+                                    style="width: ${pctDebe}%; background-color: #dc3545;"
                                     title="Debe: ${pctDebe}%"
                                 ></div>
                                 <div
                                     class="progress-bar"
                                     role="progressbar"
-                                    style="width: ${pctHaber}%; background-color: var(--accent-orange);"
+                                    style="width: ${pctHaber}%; background-color: #198754;"
                                     title="Haber: ${pctHaber}%"
                                 ></div>
                             </div>
@@ -1944,14 +3642,14 @@ function renderDashboardComparativeBars(vistaList) {
 }
 
 const PIE_SLICE_PALETTE = [
-    '#0b3d2e', // Verde profundo institucional
-    '#0a192f', // Azul profundo institucional
-    '#f97316', // Naranja acento institucional
-    '#145a43', // Verde esmeralda medio
-    '#16325b', // Azul acero institucional
-    '#ea580c', // Naranja oscuro institucional
-    '#0f766e', // Verde azulado oscuro
-    '#1e3a8a'  // Azul marino intenso
+    '#0d6efd', // Bootstrap Primary (Azul)
+    '#198754', // Bootstrap Success (Verde)
+    '#0dcaf0', // Bootstrap Info (Cian)
+    '#ffc107', // Bootstrap Warning (Amarillo)
+    '#fd7e14', // Bootstrap Orange
+    '#6f42c1', // Bootstrap Indigo/Purple
+    '#6c757d', // Bootstrap Secondary
+    '#20c997'  // Bootstrap Teal
 ];
 
 /**
@@ -2109,11 +3807,11 @@ function renderDashboardPieChartsByCurrency(statsByMoneda, currenciesOrder) {
                         <div class="d-flex align-items-center justify-content-between border-bottom pb-2 mb-2">
                             <div class="d-flex align-items-center gap-2">
                                 <span class="badge badge-status-active">${mon}</span>
-                                <span class="small fw-bold text-uppercase" style="color: var(--bg-green-deep);">
+                                <span class="small fw-bold text-uppercase text-primary">
                                     Distribución en ${mon}
                                 </span>
                             </div>
-                            <span class="small fw-bold" style="color: var(--bg-blue-deep);">
+                            <span class="small fw-bold text-dark">
                                 Total: ${netoMonedaFmt} ${mon}
                             </span>
                         </div>
@@ -2229,10 +3927,10 @@ function renderDashboardSummary() {
                 const iconClass = CURRENCY_ICONS[mon] || 'bi-cash-coin';
                 const netoColor =
                     st.neto > 0
-                        ? 'var(--bg-green-deep)'
+                        ? '#198754'
                         : st.neto < 0
-                        ? 'var(--accent-orange-dark)'
-                        : '#1e293b';
+                        ? '#dc3545'
+                        : '#212529';
                 const colClass =
                     currenciesForCards.length === 1
                         ? 'col-12 col-md-6 col-xl-4'
@@ -2334,7 +4032,7 @@ function renderDashboardSummary() {
                 const fmt = formatCurrencyAmount(st.debe, mon);
                 return `<div class="d-flex justify-content-between align-items-center py-1 border-bottom">
                     <span class="badge badge-status-active">${mon}</span>
-                    <span class="fw-bold" style="color: var(--bg-green-deep);">${fmt} ${mon}</span>
+                    <span class="fw-bold text-danger">${fmt} ${mon}</span>
                 </div>`;
             })
             .join('');
@@ -2350,7 +4048,7 @@ function renderDashboardSummary() {
                 const fmt = formatCurrencyAmount(st.haber, mon);
                 return `<div class="d-flex justify-content-between align-items-center py-1 border-bottom">
                     <span class="badge badge-status-active">${mon}</span>
-                    <span class="fw-bold" style="color: var(--accent-orange-dark);">${fmt} ${mon}</span>
+                    <span class="fw-bold text-success">${fmt} ${mon}</span>
                 </div>`;
             })
             .join('');
@@ -2366,7 +4064,7 @@ function renderDashboardSummary() {
                 const sign = st.neto > 0 ? '+' : '';
                 const fmt = formatCurrencyAmount(st.neto, mon);
                 const color =
-                    st.neto >= 0 ? 'var(--bg-green-deep)' : 'var(--accent-orange-dark)';
+                    st.neto >= 0 ? '#198754' : '#dc3545';
                 return `<div class="d-flex justify-content-between align-items-center py-1 border-bottom">
                     <span class="badge badge-status-active">${mon}</span>
                     <span class="fw-bold" style="color: ${color};">${sign}${fmt} ${mon}</span>
@@ -2375,7 +4073,7 @@ function renderDashboardSummary() {
             .join('');
     }
     if (subMovNetoEl) {
-        subMovNetoEl.textContent = 'Saldo Neto Total (Debe - Haber) respetando cada moneda';
+        subMovNetoEl.textContent = 'Saldo Neto Total (Crédito - Débito) respetando cada moneda';
     }
 
     if (movsEl) movsEl.textContent = String(totalMovimientos);
@@ -2428,7 +4126,7 @@ function renderDashboardSummary() {
         const haberFmt = formatCurrencyAmount(v.total_haber, mon);
         const saldoVal = Number(v.saldo_disponible || 0);
         const saldoFmt = formatCurrencyAmount(saldoVal, mon);
-        const saldoColor = saldoVal >= 0 ? 'var(--bg-green-deep)' : 'var(--accent-orange-dark)';
+        const saldoColor = saldoVal >= 0 ? '#198754' : '#dc3545';
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -2438,8 +4136,8 @@ function renderDashboardSummary() {
             <td data-label="Fecha">${v.fecha || v.ultima_fecha || '-'}</td>
             <td data-label="Moneda"><span class="badge badge-status-active">${mon}</span></td>
             <td data-label="Movs" class="fw-semibold">${v.total_movimientos}</td>
-            <td data-label="Total Debe" class="fw-bold" style="color: var(--bg-green-deep);">${debeFmt}</td>
-            <td data-label="Total Haber" class="fw-bold" style="color: var(--accent-orange-dark);">${haberFmt}</td>
+            <td data-label="Total Debe" class="fw-bold text-danger">${debeFmt}</td>
+            <td data-label="Total Haber" class="fw-bold text-success">${haberFmt}</td>
             <td data-label="Saldo Disponible" class="fw-bold" style="color: ${saldoColor};">${saldoVal >= 0 ? '+' : ''}${saldoFmt}</td>
         `;
         summaryBody.appendChild(tr);
@@ -2491,7 +4189,7 @@ function renderDashboardMovimientosTable() {
         const haberFmt = formatCurrencyAmount(m.haber, mon);
         const neto = Number(m.flujo_neto || 0);
         const netoFmt = formatCurrencyAmount(neto, mon);
-        const netoColor = neto >= 0 ? 'var(--bg-green-deep)' : 'var(--accent-orange-dark)';
+        const netoColor = neto >= 0 ? '#198754' : '#dc3545';
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td data-label="Código" class="fw-bold">#${m.id}</td>
@@ -2501,8 +4199,8 @@ function renderDashboardMovimientosTable() {
             <td data-label="Moneda"><span class="badge badge-status-active">${mon}</span></td>
             <td data-label="Referencia"><code>${m.referencia_legible || '-'}</code></td>
             <td data-label="Tipo"><span class="badge badge-status-alert">${m.tipo_legible || '-'}</span></td>
-            <td data-label="Debe" class="fw-bold" style="color: var(--bg-green-deep);">${debeFmt}</td>
-            <td data-label="Haber" class="fw-bold" style="color: var(--accent-orange-dark);">${haberFmt}</td>
+            <td data-label="Debe" class="fw-bold text-danger">${debeFmt}</td>
+            <td data-label="Haber" class="fw-bold text-success">${haberFmt}</td>
             <td data-label="Neto" class="fw-bold" style="color: ${netoColor};">${neto >= 0 ? '+' : ''}${netoFmt}</td>
         `;
         tbody.appendChild(tr);
@@ -3068,6 +4766,27 @@ function initAppEvents() {
     document.getElementById('btnResetMovimiento')?.addEventListener('click', resetFormMovimiento);
     document.getElementById('btnDownloadPlantillaMovs')?.addEventListener('click', downloadPlantillaMovimientosCsv);
     document.getElementById('btnImportCsvMovimientos')?.addEventListener('click', importPlantillaCsvToMovimientos);
+    document.getElementById('btnProcessPdfMovimientos')?.addEventListener('click', processPdfBankStatement);
+    document.getElementById('btnApplyPdfHeaderToRows')?.addEventListener('click', applyPdfHeaderToAllPreviewRows);
+    document.getElementById('btnDownloadPdfAnalizadoCsvTop')?.addEventListener('click', downloadPdfPreviewTableCsv);
+    document.getElementById('btnDownloadPdfAnalizadoCsv')?.addEventListener('click', downloadPdfPreviewTableCsv);
+    document.getElementById('btnSavePdfMovimientos')?.addEventListener('click', savePdfPreviewToMovimientos);
+    document.getElementById('btnClearPdfPreview')?.addEventListener('click', () => {
+        statePdfPreviewRows = [];
+        renderPdfPreviewTable();
+        hidePdfImportAlert();
+    });
+    document.getElementById('pdfMonedaDefault')?.addEventListener('change', () => {
+        if (statePdfPreviewRows.length > 0) renderPdfPreviewTable();
+    });
+    const reprocessPdfIfFileLoaded = () => {
+        const pdfInput = document.getElementById('inputPdfMovimientos');
+        if (pdfInput && pdfInput.files && pdfInput.files.length > 0 && statePdfPreviewRows.length > 0) {
+            processPdfBankStatement();
+        }
+    };
+    document.getElementById('pdfDecimalSeparator')?.addEventListener('change', reprocessPdfIfFileLoaded);
+    document.getElementById('pdfColumnModeSelect')?.addEventListener('change', reprocessPdfIfFileLoaded);
     document.getElementById('formCrudMovimientos')?.addEventListener('submit', async (event) => {
         event.preventDefault();
         const idVal = document.getElementById('movId').value;

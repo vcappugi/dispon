@@ -24,7 +24,7 @@ SELECT
     COUNT(DISTINCT m.cuenta_id)::BIGINT AS total_cuentas_movidas,
     COALESCE(SUM(m.debe), 0)::NUMERIC(18, 2) AS total_debe,
     COALESCE(SUM(m.haber), 0)::NUMERIC(18, 2) AS total_haber,
-    COALESCE(SUM(COALESCE(m.debe, 0) - COALESCE(m.haber, 0)), 0)::NUMERIC(18, 2) AS saldo_disponible,
+    COALESCE(SUM(COALESCE(m.haber, 0) - COALESCE(m.debe, 0)), 0)::NUMERIC(18, 2) AS saldo_disponible,
     MIN(m.fecha) AS primera_fecha,
     MAX(m.fecha) AS ultima_fecha
 FROM public.movimientos m

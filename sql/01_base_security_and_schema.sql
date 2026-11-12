@@ -9,64 +9,151 @@
 -- 1. Habilitar extensión nativa de criptografía en PostgreSQL
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 2. Función auxiliar de encriptación simétrica (PGP / AES-256)
-CREATE OR REPLACE FUNCTION public.encrypt_data(
-    p_plain_text TEXT,
-    p_secret_key TEXT DEFAULT current_setting('app.settings.encryption_key', true)
-)
-RETURNS TEXT
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_key TEXT;
-BEGIN
-    IF p_plain_text IS NULL OR p_plain_text = '' THEN
-        RETURN p_plain_text;
-    END IF;
-
-    v_key := COALESCE(NULLIF(p_secret_key, ''), 'disp_default_sym_key_2026_secure');
-
-    RETURN encode(
-        pgp_sym_encrypt(
-            p_plain_text,
-            v_key,
-            'cipher-algo=aes256, compress-algo=0'
-        ),
-        'base64'
-    );
-END;
-$$;
-
--- 3. Función auxiliar de desencriptación simétrica
-CREATE OR REPLACE FUNCTION public.decrypt_data(
+-- 2. Función de base de datos para desencriptar valores de texto (`ENCv1:` XOR + Base64 y respaldo pgcrypto)
+CREATE OR REPLACE FUNCTION public.desencriptar_texto(
     p_cipher_text TEXT,
-    p_secret_key TEXT DEFAULT current_setting('app.settings.encryption_key', true)
+    p_secret_key TEXT DEFAULT 'disp_client_sym_layer_2026'
 )
 RETURNS TEXT
 LANGUAGE plpgsql
-SECURITY DEFINER
+IMMUTABLE
+SECURITY INVOKER
 SET search_path = public
 AS $$
 DECLARE
     v_key TEXT;
+    v_b64 TEXT;
+    v_cipher_bytes BYTEA;
+    v_key_bytes BYTEA;
+    v_result_bytes BYTEA;
+    v_data_len INTEGER;
+    v_key_len INTEGER;
+    i INTEGER;
 BEGIN
     IF p_cipher_text IS NULL OR p_cipher_text = '' THEN
         RETURN p_cipher_text;
     END IF;
 
-    v_key := COALESCE(NULLIF(p_secret_key, ''), 'disp_default_sym_key_2026_secure');
+    v_key := COALESCE(NULLIF(p_secret_key, ''), 'disp_client_sym_layer_2026');
 
+    -- Modelo principal de la aplicación: prefijo 'ENCv1:' + Base64(UTF-8 XOR clave)
+    IF left(p_cipher_text, 6) = 'ENCv1:' THEN
+        BEGIN
+            v_b64 := substring(p_cipher_text FROM 7);
+            v_cipher_bytes := decode(v_b64, 'base64');
+            v_key_bytes := convert_to(v_key, 'UTF8');
+            v_data_len := octet_length(v_cipher_bytes);
+            v_key_len := octet_length(v_key_bytes);
+
+            IF v_data_len = 0 OR v_key_len = 0 THEN
+                RETURN '';
+            END IF;
+
+            v_result_bytes := v_cipher_bytes;
+
+            FOR i IN 0 .. (v_data_len - 1) LOOP
+                v_result_bytes := set_byte(
+                    v_result_bytes,
+                    i,
+                    get_byte(v_cipher_bytes, i) # get_byte(v_key_bytes, mod(i, v_key_len))
+                );
+            END LOOP;
+
+            RETURN convert_from(v_result_bytes, 'UTF8');
+        EXCEPTION WHEN OTHERS THEN
+            RETURN p_cipher_text;
+        END;
+    END IF;
+
+    -- Respaldo compatible con pgcrypto AES-256
     BEGIN
         RETURN pgp_sym_decrypt(
             decode(p_cipher_text, 'base64'),
-            v_key
+            COALESCE(NULLIF(p_secret_key, ''), 'disp_default_sym_key_2026_secure')
         );
     EXCEPTION WHEN OTHERS THEN
         RETURN p_cipher_text;
     END;
 END;
+$$;
+
+-- 3. Función de base de datos para encriptar valores de texto bajo el mismo modelo (`ENCv1:`)
+CREATE OR REPLACE FUNCTION public.encriptar_texto(
+    p_plain_text TEXT,
+    p_secret_key TEXT DEFAULT 'disp_client_sym_layer_2026'
+)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+    v_key TEXT;
+    v_data_bytes BYTEA;
+    v_key_bytes BYTEA;
+    v_result_bytes BYTEA;
+    v_data_len INTEGER;
+    v_key_len INTEGER;
+    i INTEGER;
+BEGIN
+    IF p_plain_text IS NULL OR p_plain_text = '' THEN
+        RETURN p_plain_text;
+    END IF;
+
+    IF left(p_plain_text, 6) = 'ENCv1:' THEN
+        RETURN p_plain_text;
+    END IF;
+
+    v_key := COALESCE(NULLIF(p_secret_key, ''), 'disp_client_sym_layer_2026');
+    v_data_bytes := convert_to(p_plain_text, 'UTF8');
+    v_key_bytes := convert_to(v_key, 'UTF8');
+    v_data_len := octet_length(v_data_bytes);
+    v_key_len := octet_length(v_key_bytes);
+
+    IF v_data_len = 0 OR v_key_len = 0 THEN
+        RETURN '';
+    END IF;
+
+    v_result_bytes := v_data_bytes;
+
+    FOR i IN 0 .. (v_data_len - 1) LOOP
+        v_result_bytes := set_byte(
+            v_result_bytes,
+            i,
+            get_byte(v_data_bytes, i) # get_byte(v_key_bytes, mod(i, v_key_len))
+        );
+    END LOOP;
+
+    RETURN 'ENCv1:' || regexp_replace(encode(v_result_bytes, 'base64'), '[\r\n]+', '', 'g');
+END;
+$$;
+
+-- Alias compatibles `encrypt_data` y `decrypt_data`
+CREATE OR REPLACE FUNCTION public.encrypt_data(
+    p_plain_text TEXT,
+    p_secret_key TEXT DEFAULT 'disp_client_sym_layer_2026'
+)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+    SELECT public.encriptar_texto(p_plain_text, p_secret_key);
+$$;
+
+CREATE OR REPLACE FUNCTION public.decrypt_data(
+    p_cipher_text TEXT,
+    p_secret_key TEXT DEFAULT 'disp_client_sym_layer_2026'
+)
+RETURNS TEXT
+LANGUAGE sql
+IMMUTABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+    SELECT public.desencriptar_texto(p_cipher_text, p_secret_key);
 $$;
 
 -- 4. Tabla `usuarios`
@@ -163,6 +250,8 @@ BEGIN
 END
 $$;
 
+GRANT EXECUTE ON FUNCTION public.desencriptar_texto(TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.encriptar_texto(TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.encrypt_data(TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.decrypt_data(TEXT, TEXT) TO anon, authenticated;
 
@@ -186,7 +275,7 @@ SELECT
     COUNT(DISTINCT m.cuenta_id)::BIGINT AS total_cuentas_movidas,
     COALESCE(SUM(m.debe), 0)::NUMERIC(18, 2) AS total_debe,
     COALESCE(SUM(m.haber), 0)::NUMERIC(18, 2) AS total_haber,
-    COALESCE(SUM(COALESCE(m.debe, 0) - COALESCE(m.haber, 0)), 0)::NUMERIC(18, 2) AS saldo_disponible,
+    COALESCE(SUM(COALESCE(m.haber, 0) - COALESCE(m.debe, 0)), 0)::NUMERIC(18, 2) AS saldo_disponible,
     MIN(m.fecha) AS primera_fecha,
     MAX(m.fecha) AS ultima_fecha
 FROM public.movimientos m
