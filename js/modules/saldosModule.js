@@ -308,3 +308,4 @@ export function initSaldosModule() {
         await refreshAllDatabaseData();
     });
 }
+

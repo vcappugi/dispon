@@ -50,22 +50,27 @@ export function renderBancosTable() {
     const filtered = filterRowsBySearch(enrichedBancos, st.search, [
         'id',
         'nombre_legible',
+        'tipo_legible',
         'descripcion_legible'
     ]);
     const sorted = sortRowsByField(filtered, st.sortField, st.sortAsc);
     const pageRows = paginateAndRenderControls(sorted, st, 'paginationBancos', renderBancosTable);
 
     if (pageRows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted small py-3">No se encontraron bancos que coincidan con el filtro.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted small py-3">No se encontraron bancos que coincidan con el filtro.</td></tr>`;
         return;
     }
 
     tbody.innerHTML = '';
     pageRows.forEach((b) => {
+        const tipoBadge = b.tipo_legible
+            ? `<span class="badge badge-status-active">${escapeHtml(b.tipo_legible)}</span>`
+            : '<span class="text-muted">-</span>';
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td data-label="ID" class="fw-bold">#${b.id}</td>
             <td data-label="Nombre" class="fw-semibold">${escapeHtml(b.nombre_legible)}</td>
+            <td data-label="Tipo">${tipoBadge}</td>
             <td data-label="Descripción" class="small text-secondary">${escapeHtml(b.descripcion_legible || '-')}</td>
             <td data-label="Cuentas">
                 <span class="badge bg-info text-dark">${b.total_cuentas} cta(s)</span>
@@ -91,6 +96,7 @@ export function renderBancosTable() {
             if (!found) return;
             document.getElementById('bancoId').value = String(found.id);
             document.getElementById('bancoNombre').value = found.nombre_legible;
+            document.getElementById('bancoTipo').value = found.tipo_legible || 'Banco Nacional';
             document.getElementById('bancoDescripcion').value = found.descripcion_legible || '';
             const badge = document.getElementById('badgeModeBanco');
             if (badge) {
@@ -138,12 +144,14 @@ export function initBancosModule() {
         event.preventDefault();
         const idVal = document.getElementById('bancoId').value;
         const nombrePlano = document.getElementById('bancoNombre').value.trim();
+        const tipoPlano = document.getElementById('bancoTipo').value.trim();
         const descPlano = document.getElementById('bancoDescripcion').value.trim();
 
-        if (!nombrePlano) return;
+        if (!nombrePlano || !tipoPlano) return;
 
         const payload = {
             nombre: encryptLocalSymmetric(nombrePlano),
+            tipo: encryptLocalSymmetric(tipoPlano),
             descripcion: descPlano ? encryptLocalSymmetric(descPlano) : null
         };
 
@@ -164,3 +172,4 @@ export function initBancosModule() {
         await refreshAllDatabaseData();
     });
 }
+

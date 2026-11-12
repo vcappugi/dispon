@@ -31,6 +31,18 @@ export function getBancosViewHtml() {
                                 <div class="form-text small">Se almacena cifrado en Supabase con capa simétrica.</div>
                             </div>
                             <div class="col-12">
+                                <label for="bancoTipo" class="form-label small fw-bold mb-1">
+                                    Tipo de Entidad (<code>tipo</code>)
+                                </label>
+                                <select id="bancoTipo" class="form-select form-select-sm" required>
+                                    <option value="Banco Nacional">Banco Nacional</option>
+                                    <option value="Banco Internacional">Banco Internacional</option>
+                                    <option value="Wallet">Wallet</option>
+                                    <option value="Estructura">Estructura</option>
+                                    <option value="Caja Efectivo">Caja Efectivo</option>
+                                </select>
+                            </div>
+                            <div class="col-12">
                                 <label for="bancoDescripcion" class="form-label small fw-bold mb-1">
                                     Descripción o Sucursal (<code>descripcion</code>)
                                 </label>
@@ -73,7 +85,7 @@ export function getBancosViewHtml() {
                                         type="text"
                                         id="filterBancos"
                                         class="form-control"
-                                        placeholder="Buscar por código (ID), nombre del banco o descripción..."
+                                        placeholder="Buscar por código (ID), nombre, tipo o descripción..."
                                     />
                                 </div>
                             </div>
@@ -92,19 +104,22 @@ export function getBancosViewHtml() {
                             <table class="table table-adaptive align-middle">
                                 <thead id="theadBancos">
                                     <tr>
-                                        <th style="width: 11%;" class="sortable-th" data-sort="id">
+                                        <th style="width: 9%;" class="sortable-th" data-sort="id">
                                             ID <span class="sort-indicator"></span>
                                         </th>
-                                        <th style="width: 30%;" class="sortable-th" data-sort="nombre_legible">
+                                        <th style="width: 24%;" class="sortable-th" data-sort="nombre_legible">
                                             Nombre del Banco <span class="sort-indicator"></span>
                                         </th>
-                                        <th style="width: 33%;" class="sortable-th" data-sort="descripcion_legible">
+                                        <th style="width: 17%;" class="sortable-th" data-sort="tipo_legible">
+                                            Tipo <span class="sort-indicator"></span>
+                                        </th>
+                                        <th style="width: 26%;" class="sortable-th" data-sort="descripcion_legible">
                                             Descripción <span class="sort-indicator"></span>
                                         </th>
-                                        <th style="width: 12%;" class="sortable-th" data-sort="total_cuentas">
+                                        <th style="width: 11%;" class="sortable-th" data-sort="total_cuentas">
                                             Cuentas <span class="sort-indicator"></span>
                                         </th>
-                                        <th style="width: 14%;">Acciones</th>
+                                        <th style="width: 13%;">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody id="crudBancosTableBody"></tbody>
@@ -118,3 +133,4 @@ export function getBancosViewHtml() {
     </section>
     `;
 }
+

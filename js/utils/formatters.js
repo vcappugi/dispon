@@ -101,3 +101,4 @@ export function hideScopedAlert(elementId) {
     const el = document.getElementById(elementId);
     if (el) el.classList.add('d-none');
 }
+

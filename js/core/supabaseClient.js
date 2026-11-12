@@ -75,3 +75,4 @@ export async function insertRowsInBatches(tableName, payloads, batchSize = 500, 
 
     return { inserted: payloads.length, error: null };
 }
+

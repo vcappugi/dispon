@@ -45,24 +45,27 @@ export function renderCuentasTable() {
         'id',
         'banco_nombre',
         'cuenta_legible',
-        'tipo_legible'
+        'tipo_legible',
+        'moneda_legible'
     ]);
     const sorted = sortRowsByField(filtered, st.sortField, st.sortAsc);
     const pageRows = paginateAndRenderControls(sorted, st, 'paginationCuentas', renderCuentasTable);
 
     if (pageRows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted small py-3">No se encontraron cuentas que coincidan con el filtro.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted small py-3">No se encontraron cuentas que coincidan con el filtro.</td></tr>`;
         return;
     }
 
     tbody.innerHTML = '';
     pageRows.forEach((c) => {
+        const monedaLabel = (c.moneda_legible || 'VES').toUpperCase();
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td data-label="ID" class="fw-bold">#${c.id}</td>
             <td data-label="Banco" class="fw-semibold">${escapeHtml(c.banco_nombre)}</td>
             <td data-label="Número"><code>${escapeHtml(c.cuenta_legible)}</code></td>
             <td data-label="Tipo"><span class="badge badge-status-active">${escapeHtml(c.tipo_legible || 'Corriente')}</span></td>
+            <td data-label="Moneda"><span class="badge bg-secondary">${escapeHtml(monedaLabel)}</span></td>
             <td data-label="Acciones">
                 <div class="d-flex gap-1">
                     <button type="button" class="btn btn-sm btn-institutional-white py-0 px-2 btn-edit-cuenta" data-id="${c.id}" title="Editar">
@@ -86,6 +89,7 @@ export function renderCuentasTable() {
             document.getElementById('cuentaBancoId').value = String(found.banco_id);
             document.getElementById('cuentaNumero').value = found.cuenta_legible;
             document.getElementById('cuentaTipo').value = found.tipo_legible || 'Corriente';
+            document.getElementById('cuentaMoneda').value = (found.moneda_legible || 'VES').toUpperCase();
             const badge = document.getElementById('badgeModeCuenta');
             if (badge) {
                 badge.textContent = `Editando #${found.id}`;
@@ -139,13 +143,15 @@ export function initCuentasModule() {
         const bancoId = Number(document.getElementById('cuentaBancoId').value);
         const cuentaPlano = document.getElementById('cuentaNumero').value.trim();
         const tipoPlano = document.getElementById('cuentaTipo').value.trim();
+        const monedaPlano = (document.getElementById('cuentaMoneda').value || 'VES').trim().toUpperCase();
 
-        if (!bancoId || !cuentaPlano) return;
+        if (!bancoId || !cuentaPlano || !monedaPlano) return;
 
         const payload = {
             banco_id: bancoId,
             cuenta: encryptLocalSymmetric(cuentaPlano),
-            tipo: encryptLocalSymmetric(tipoPlano)
+            tipo: encryptLocalSymmetric(tipoPlano),
+            moneda: encryptLocalSymmetric(monedaPlano)
         };
 
         const { error } = idVal
@@ -165,3 +171,4 @@ export function initCuentasModule() {
         await refreshAllDatabaseData();
     });
 }
+

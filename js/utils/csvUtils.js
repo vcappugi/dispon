@@ -186,3 +186,4 @@ export function downloadPlantillaMovimientosCsv(bancos = [], cuentas = []) {
 
     downloadCsvFile('plantilla_movimientos_banco.csv', headers, exampleRows, false);
 }
+

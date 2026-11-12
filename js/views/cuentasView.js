@@ -3,7 +3,13 @@
  * @description Pantalla dedicada al CRUD completo de cuentas bancarias (`public.cuentas`).
  */
 
+import { SUPPORTED_CURRENCIES } from '../utils/formatters.js';
+
 export function getCuentasViewHtml() {
+    const monedaOptionsHtml = SUPPORTED_CURRENCIES.map(
+        (m) => `<option value="${m}">${m}</option>`
+    ).join('');
+
     return `
     <section id="module-cuentas" class="module-section d-none">
         <div class="row g-3">
@@ -47,6 +53,14 @@ export function getCuentasViewHtml() {
                                     <option value="Custodia / Divisas">Custodia / Divisas</option>
                                 </select>
                             </div>
+                            <div class="col-12">
+                                <label for="cuentaMoneda" class="form-label small fw-bold mb-1">
+                                    Moneda de la Cuenta (<code>moneda</code>)
+                                </label>
+                                <select id="cuentaMoneda" class="form-select form-select-sm" required>
+                                    ${monedaOptionsHtml}
+                                </select>
+                            </div>
                             <div class="col-12 d-flex gap-2 pt-2 border-top">
                                 <button type="button" id="btnResetCuenta" class="btn btn-sm btn-outline-secondary w-50">
                                     <i class="bi bi-eraser me-1"></i>Limpiar
@@ -86,7 +100,7 @@ export function getCuentasViewHtml() {
                                         type="text"
                                         id="filterCuentas"
                                         class="form-control"
-                                        placeholder="Código, banco, número o tipo..."
+                                        placeholder="Código, banco, número, tipo o moneda..."
                                     />
                                 </div>
                             </div>
@@ -105,17 +119,20 @@ export function getCuentasViewHtml() {
                             <table class="table table-adaptive align-middle">
                                 <thead id="theadCuentas">
                                     <tr>
-                                        <th style="width: 10%;" class="sortable-th" data-sort="id">
+                                        <th style="width: 9%;" class="sortable-th" data-sort="id">
                                             ID <span class="sort-indicator"></span>
                                         </th>
-                                        <th style="width: 28%;" class="sortable-th" data-sort="banco_nombre">
+                                        <th style="width: 25%;" class="sortable-th" data-sort="banco_nombre">
                                             Banco <span class="sort-indicator"></span>
                                         </th>
-                                        <th style="width: 30%;" class="sortable-th" data-sort="cuenta_legible">
+                                        <th style="width: 26%;" class="sortable-th" data-sort="cuenta_legible">
                                             Número de Cuenta <span class="sort-indicator"></span>
                                         </th>
-                                        <th style="width: 18%;" class="sortable-th" data-sort="tipo_legible">
+                                        <th style="width: 15%;" class="sortable-th" data-sort="tipo_legible">
                                             Tipo <span class="sort-indicator"></span>
+                                        </th>
+                                        <th style="width: 11%;" class="sortable-th" data-sort="moneda_legible">
+                                            Moneda <span class="sort-indicator"></span>
                                         </th>
                                         <th style="width: 14%;">Acciones</th>
                                     </tr>
@@ -131,3 +148,4 @@ export function getCuentasViewHtml() {
     </section>
     `;
 }
+

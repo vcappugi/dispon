@@ -134,3 +134,4 @@ export function refreshAllEntitySelects() {
     populateCuentaSelectById('filterMovCuentaId', filterMovBancoVal, 'Todas las cuentas');
     populateCuentaSelectById('pdfTargetCuentaId', pdfBancoVal, '-- Auto / Directo a Banco --');
 }
+

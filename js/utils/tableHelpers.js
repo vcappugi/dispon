@@ -170,3 +170,4 @@ export function bindSortableHeaders(theadId, tblState, renderFn) {
         });
     });
 }
+

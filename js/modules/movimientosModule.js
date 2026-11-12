@@ -302,3 +302,4 @@ export function initMovimientosModule() {
         await refreshAllDatabaseData();
     });
 }
+

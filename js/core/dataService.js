@@ -106,7 +106,7 @@ export async function loadBancosFromDb() {
     const { data, error } = await fetchAllSupabaseRows((from, to) =>
         supabase
             .from('bancos')
-            .select('id, created_at, nombre, descripcion')
+            .select('id, created_at, nombre, descripcion, tipo')
             .order('id', { ascending: true })
             .range(from, to)
     );
@@ -119,7 +119,8 @@ export async function loadBancosFromDb() {
     appState.bancos = data.map((row) => ({
         ...row,
         nombre_legible: decryptLocalSymmetric(row.nombre || ''),
-        descripcion_legible: decryptLocalSymmetric(row.descripcion || '')
+        descripcion_legible: decryptLocalSymmetric(row.descripcion || ''),
+        tipo_legible: decryptLocalSymmetric(row.tipo || '')
     }));
 }
 
@@ -127,7 +128,7 @@ export async function loadCuentasFromDb() {
     const { data, error } = await fetchAllSupabaseRows((from, to) =>
         supabase
             .from('cuentas')
-            .select('id, created_at, banco_id, cuenta, tipo')
+            .select('id, created_at, banco_id, cuenta, tipo, moneda')
             .order('id', { ascending: true })
             .range(from, to)
     );
@@ -140,7 +141,8 @@ export async function loadCuentasFromDb() {
     appState.cuentas = data.map((row) => ({
         ...row,
         cuenta_legible: decryptLocalSymmetric(row.cuenta || ''),
-        tipo_legible: decryptLocalSymmetric(row.tipo || '')
+        tipo_legible: decryptLocalSymmetric(row.tipo || ''),
+        moneda_legible: decryptLocalSymmetric(row.moneda || 'VES')
     }));
 }
 
@@ -286,3 +288,4 @@ export async function refreshAllDatabaseData() {
     refreshAllEntitySelects();
     dataRefreshListeners.forEach((listener) => listener());
 }
+

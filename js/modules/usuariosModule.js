@@ -1,10 +1,10 @@
 /**
  * @file js/modules/usuariosModule.js
- * @description Controlador de Usuarios del sistema y utilidades SQL.
+ * @description Controlador de Usuarios del sistema.
  */
 
 import { appState } from '../core/state.js';
-import { escapeHtml, showFeedback } from '../utils/formatters.js';
+import { escapeHtml } from '../utils/formatters.js';
 import {
     sortRowsByField,
     filterRowsBySearch,
@@ -26,12 +26,12 @@ export function renderUsuariosTable() {
     const st = appState.tableStates.usuarios;
     updateSortIndicators('theadUsuarios', st);
 
-    const filtered = filterRowsBySearch(appState.usuarios, st.search, ['id', 'nombre', 'rol', 'clave']);
+    const filtered = filterRowsBySearch(appState.usuarios, st.search, ['id', 'nombre', 'rol']);
     const sorted = sortRowsByField(filtered, st.sortField, st.sortAsc);
     const pageRows = paginateAndRenderControls(sorted, st, 'paginationUsuarios', renderUsuariosTable);
 
     if (pageRows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-3">No se encontraron usuarios.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-3">No se encontraron usuarios.</td></tr>`;
         return;
     }
 
@@ -46,11 +46,6 @@ export function renderUsuariosTable() {
                 <span class="badge ${u.rol === 'admin' ? 'badge-status-active' : 'badge-status-alert'}">
                     ${escapeHtml(u.rol)}
                 </span>
-            </td>
-            <td data-label="Clave Encriptada (BD)">
-                <code class="small text-break bg-light border text-dark px-2 py-1 rounded d-inline-block w-100">
-                    ${escapeHtml(u.clave)}
-                </code>
             </td>
             <td data-label="Fecha Registro">${fecha}</td>
         `;
@@ -72,15 +67,5 @@ export function initUsuariosModule() {
         appState.tableStates.usuarios.page = 1;
         renderUsuariosTable();
     });
-
-    document.getElementById('btnCopySqlVista')?.addEventListener('click', async () => {
-        const sqlText = document.getElementById('sqlVistaCodeBlock')?.textContent || '';
-        if (sqlText && navigator.clipboard) {
-            await navigator.clipboard.writeText(sqlText);
-            showFeedback(
-                'Scripts SQL de desencriptación y vista copiados al portapapeles.',
-                'success'
-            );
-        }
-    });
 }
+

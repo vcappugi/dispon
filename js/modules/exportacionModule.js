@@ -222,3 +222,4 @@ export function initExportacionModule() {
     document.getElementById('btnExportCsvSaldos')?.addEventListener('click', exportSaldosCsv);
     document.getElementById('btnExportCsvMovimientos')?.addEventListener('click', exportMovimientosCsv);
 }
+

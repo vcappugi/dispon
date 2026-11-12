@@ -718,3 +718,4 @@ export function initDashboardModule() {
         renderDashboardMovimientosTable();
     });
 }
+

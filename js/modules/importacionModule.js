@@ -577,3 +577,4 @@ export function initImportacionModule() {
     });
     document.getElementById('btnImportPlantillaCsv')?.addEventListener('click', importPlantillaCsvToMovimientos);
 }
+
