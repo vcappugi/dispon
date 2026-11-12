@@ -74,4 +74,8 @@ function bootstrapApplication() {
     initAuthModule();
 }
 
-document.addEventListener('DOMContentLoaded', bootstrapApplication);
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrapApplication);
+} else {
+    bootstrapApplication();
+}

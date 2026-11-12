@@ -30,7 +30,7 @@ export function getMovimientosViewHtml() {
             </div>
         </div>
 
-        <!-- FORMULARIO DEDICADO CRUD `public.movimientos` -->
+        <!-- FORMULARIO DEDICADO CRUD public.movimientos -->
         <div class="collapse show mb-3" id="collapseFormMovimiento">
             <div class="card card-institutional">
                 <div class="card-header d-flex justify-content-between align-items-center">
@@ -199,3 +199,4 @@ export function getMovimientosViewHtml() {
     </section>
     `;
 }
+

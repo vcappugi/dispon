@@ -109,7 +109,7 @@ export function getSaldosViewHtml() {
                 </div>
             </div>
 
-            <!-- PANEL 2: CRUD MANUAL `public.saldos_banco` -->
+            <!-- PANEL 2: CRUD MANUAL public.saldos_banco -->
             <div class="tab-pane fade" id="paneSaldosManuales" role="tabpanel">
                 <div class="row g-3">
                     <div class="col-12 col-lg-4">
@@ -211,3 +211,4 @@ export function getSaldosViewHtml() {
     </section>
     `;
 }
+
